@@ -1,0 +1,86 @@
+# 📡 Drop
+
+> A frictionless cross-device drop inbox.
+>
+> Send text, links, or files from any device and pick them up on another — **no accounts, no cloud, no app install.** Just one small self-hosted binary on your own network.
+
+##
+
+## 🤔 Why
+
+Moving a small thing between devices is weirdly annoying. A link on my phone I want on my laptop, a screenshot from my laptop I want on my home server, a snippet between two machines that don't share an OS — every option breaks my flow.
+
+Emailing myself, DMing myself in some chat app, or fighting AirDrop (which doesn't work across Windows/Linux/iOS) gets old fast. **Drop is the boring-but-instant answer:** a shared inbox that lives on your own network.
+
+---
+
+## ✨ Features
+
+- **Send anything** — plain text, URLs (auto-detected as links), or file uploads.
+- **Live inbox** — a clean web page that updates in real time over SSE; new drops appear instantly on every open device.
+- **Auto-copy** — opt in and the newest text/link lands straight on your clipboard the moment it arrives.
+- **Self-cleaning** — items expire after a configurable TTL (default 1 hour), so nothing piles up.
+- **Optional shared token** — lock it down with a secret when you expose it beyond localhost.
+- **One binary** — pure Rust (axum), no database, no runtime dependencies.
+- **Send from anywhere** — a `drop` CLI for Linux/macOS, a PowerShell version for Windows, and an iOS/iPadOS Shortcut.
+
+---
+
+## 🚀 Quick start
+
+```sh
+cargo run --release   # listens on 0.0.0.0:7777
+```
+
+Then open <http://localhost:7777> in a browser, or throw things at the API:
+
+```sh
+curl -d "ship it" localhost:7777/api/text
+curl -d "https://example.com" localhost:7777/api/text
+curl -F "file=@photo.png" localhost:7777/api/file
+curl -s localhost:7777/api/items | jq .
+```
+
+##
+
+## ⚙️ Configuration
+
+| Variable        | Default        | Meaning                                      |
+| --------------- | -------------- | -------------------------------------------- |
+| `DROP_ADDR`     | `0.0.0.0:7777` | Listen address                               |
+| `DROP_TOKEN`    | _(empty)_      | Shared secret; empty = open                  |
+| `DROP_TTL_SECS` | `3600`         | Item lifetime in seconds; `0` = keep forever |
+
+Pass the token as a header `X-Drop-Token: <token>` or a query string `?token=<token>` (the web UI reads `?token=` from its own URL).
+
+---
+
+## 🔌 API
+
+| Method | Path                  | Body      | Result                  |
+| ------ | --------------------- | --------- | ----------------------- |
+| `POST` | `/api/text`           | raw text  | text/link item          |
+| `POST` | `/api/file`           | multipart | file item               |
+| `GET`  | `/api/items`          | —         | JSON list, newest first |
+| `GET`  | `/api/items/{id}/raw` | —         | original bytes          |
+| `GET`  | `/api/events`         | —         | SSE stream of new items |
+| `GET`  | `/`                   | —         | web inbox               |
+| `GET`  | `/health`             | —         | ok                      |
+
+---
+
+## 💻 Clients
+
+- **CLI (Linux/macOS):** `bin/drop` — `drop "some text"`, `drop ./file.png`, or pipe `echo hi | drop`.
+- **Windows:** `bin/drop.ps1`.
+- **iOS/iPadOS:** see [`shortcuts/ios-shortcut-guide.md`](shortcuts/ios-shortcut-guide.md) to add a one-tap Share Sheet action.
+
+  Point clients at the server with `DROP_URL` (and `DROP_TOKEN` if set).
+
+---
+
+## 📦 Deploy
+
+Tag a release (`v*`) and GitHub Actions builds static binaries for Linux, macOS, and Windows (see [`.github/workflows/release.yml`](.github/workflows/release.yml)).
+
+For off-network access, run it behind a mesh VPN like **NetBird** or **Tailscale** and use the overlay IP instead of exposing a port.
