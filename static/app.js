@@ -41,10 +41,11 @@ function render(items) {
     meta.innerHTML = `<span class="tag">${it.kind}</span><span>${age(it.created)} 전</span>`;
     const del = document.createElement("span");
     del.className = "del";
-    del.textContent = "x";
+    del.textContent = "✕";
     del.title = "삭제";
     del.onclick = () => remove(it.id);
     meta.appendChild(del);
+    card.appendChild(meta);
     if (it.kind === "file") {
       const b = document.createElement("button");
       b.className = "secondary";
@@ -71,34 +72,36 @@ function render(items) {
         o.style.marginLeft = "8px";
         card.appendChild(o);
       }
-      listEl.appendChild(card);
     }
+    listEl.appendChild(card);
   }
-  async function load() {
-    try {
-      const r = await fetch("/api/items");
-      const items = await r.json();
-      render(items);
-    } catch (e) {
-      return null;
-    }
-  }
+}
 
-  async function refreshAndMaybeCopy() {
-    const items = await load();
-    if (!items || !items.length) {
-      lastTop = null;
-      return;
-    }
-    const top = items[0];
-    if (
-      lastTop &&
-      top.id !== lastTop &&
-      document.getElementById("autocopy").checked &&
-      top.kind !== "file"
-    )
-      copy(top.text || "");
+async function load() {
+  try {
+    const r = await fetch("/api/items");
+    const items = await r.json();
+    render(items);
+    return items;
+  } catch (e) {
+    return null;
   }
+}
+
+async function refreshAndMaybeCopy() {
+  const items = await load();
+  if (!items || !items.length) {
+    lastTop = null;
+    return;
+  }
+  const top = items[0];
+  if (
+    lastTop &&
+    top.id !== lastTop &&
+    document.getElementById("autocopy").checked &&
+    top.kind !== "file"
+  )
+    copy(top.text || "");
   lastTop = top.id;
 }
 
@@ -109,7 +112,7 @@ async function remove(id) {
 
 async function send() {
   const ta = document.getElementById("text");
-  const v = ta.ariaValueMax;
+  const v = ta.value;
   if (!v.trim()) return;
   await fetch("/api/text", {
     method: "POST",
@@ -125,37 +128,40 @@ async function sendFiles(files) {
     fd.append("file", f);
     await fetch("/api/file", { method: "POST", body: fd });
   }
-  document.getElementById("send").onclick = send;
-  document.getElementById("text").addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      send();
-    }
-  });
-  document.getElementById("file").onchange = async (e) => {
-    await sendFiles(e.target.files);
-    e.target.value = "";
-  };
-  document.getElementById("clear").onclick = async () => {
-    if (confirm("전체 삭제할까요?")) {
-      await fetch("/api/items", { method: "DELETE" });
-      load();
-    }
-  };
-  function connect() {
-    const ev = new EventSource("/api/events");
-    ev.onopen = () => {
-      statusEl.textContent = "실시간 연결됨";
-    };
-    ev.addEventListener("item", () => refreshAndMaybeCopy());
-    ev.onerror = () => {
-      statusEl.textContent = "재연결 중...";
-    };
-  }
-  (async () => {
-    const items = await load();
-    if (items && items.length) lastTop = items[0].id;
-    connect();
-    setInterval(load, 15000);
-  })();
 }
+
+document.getElementById("send").onclick = send;
+document.getElementById("text").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    send();
+  }
+});
+document.getElementById("file").onchange = async (e) => {
+  await sendFiles(e.target.files);
+  e.target.value = "";
+};
+document.getElementById("clear").onclick = async () => {
+  if (confirm("전체 삭제할까요?")) {
+    await fetch("/api/items", { method: "DELETE" });
+    load();
+  }
+};
+
+function connect() {
+  const ev = new EventSource("/api/events");
+  ev.onopen = () => {
+    statusEl.textContent = "실시간 연결됨";
+  };
+  ev.addEventListener("item", () => refreshAndMaybeCopy());
+  ev.onerror = () => {
+    statusEl.textContent = "재연결 중...";
+  };
+}
+
+(async () => {
+  const items = await load();
+  if (items && items.length) lastTop = items[0].id;
+  connect();
+  setInterval(load, 15000);
+})();
