@@ -1,7 +1,5 @@
-use axum::extract::multipart::{self, Field};
 use axum::response::Html;
 use axum::response::sse::{Event, KeepAlive, Sse};
-use axum::serve::Listener;
 use axum::{
     Json, Router,
     extract::{Multipart, Path, State},
@@ -9,7 +7,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{delete, get, post},
 };
-use serde::{Serialize, ser};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -17,7 +15,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
-use uuid::{Uuid, uuid};
+use uuid::Uuid;
 
 #[derive(Clone, Serialize)]
 struct Item {
