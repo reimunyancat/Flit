@@ -7,13 +7,13 @@ use axum::{
     extract::{Multipart, Path, State},
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 use serde::{Serialize, ser};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
@@ -59,6 +59,24 @@ fn store(state: &AppState, item: Item) {
     let id = item.id.clone();
     state.items.lock().unwrap().insert(id.clone(), item);
     let _ = state.tx.send(id);
+}
+
+fn spawn_reaper(state: AppState) {
+    if state.ttl == 0 {
+        return;
+    }
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(Duration::from_secs(30));
+        loop {
+            tick.tick().await;
+            let t = now();
+            state
+                .items
+                .lock()
+                .unwrap()
+                .retain(|_, it| it.expires == 0 || it.expires > t);
+        }
+    });
 }
 
 async fn icon() -> Response {
@@ -152,6 +170,22 @@ async fn post_file(State(state): State<AppState>, mut multipart: Multipart) -> R
     (StatusCode::CREATED, "ok").into_response()
 }
 
+async fn delete_item(State(state): State<AppState>, Path(id): Path<String>) -> Response {
+    let removed = state.items.lock().unwrap().remove(&id).is_some();
+    if removed {
+        let _ = state.tx.send(String::new());
+        StatusCode::NO_CONTENT.into_response()
+    } else {
+        (StatusCode::NOT_FOUND, "not found").into_response()
+    }
+}
+
+async fn clear_items(State(state): State<AppState>) -> Response {
+    state.items.lock().unwrap().clear();
+    let _ = state.tx.send(String::new());
+    StatusCode::NO_CONTENT.into_response()
+}
+
 async fn get_raw(State(state): State<AppState>, Path(id): Path<String>) -> Response {
     let map = state.items.lock().unwrap();
     match map.get(&id) {
@@ -172,6 +206,15 @@ async fn get_raw(State(state): State<AppState>, Path(id): Path<String>) -> Respo
 
 async fn index() -> Html<&'static str> {
     Html(include_str!("../static/index.html"))
+}
+
+async fn app_js() -> Response {
+    let mut h = HeaderMap::new();
+    h.insert(
+        header::CONTENT_TYPE,
+        header::HeaderValue::from_static("application/javascript; charset=utf-8"),
+    );
+    (h, include_str!("../static/app.js")).into_response()
 }
 
 async fn events(State(state): State<AppState>) -> impl IntoResponse {
@@ -199,16 +242,19 @@ async fn main() {
         tx,
         ttl,
     };
+    spawn_reaper(state.clone());
 
     let app = Router::new()
         .route("/", get(index))
+        .route("/app.js", get(app_js))
         .route("/health", get(health))
         .route("/icon.svg", get(icon))
-        .route("/api/events", get(events))
         .route("/api/text", post(post_text))
         .route("/api/file", post(post_file))
-        .route("/api/items", get(list_items))
+        .route("/api/items", get(list_items).delete(clear_items))
         .route("/api/items/{id}/raw", get(get_raw))
+        .route("/api/items/{id}", delete(delete_item))
+        .route("/api/events", get(events))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
