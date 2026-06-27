@@ -1,4 +1,4 @@
-# 📡 Drop
+# 📡 Flit
 
 > A frictionless cross-device drop inbox.
 >
@@ -10,7 +10,7 @@
 
 Moving a small thing between devices is weirdly annoying. A link on my phone I want on my laptop, a screenshot from my laptop I want on my home server, a snippet between two machines that don't share an OS — every option breaks my flow.
 
-Emailing myself, DMing myself in some chat app, or fighting AirDrop (which doesn't work across Windows/Linux/iOS) gets old fast. **Drop is the boring-but-instant answer:** a shared inbox that lives on your own network.
+Emailing myself, DMing myself in some chat app, or fighting AirDrop (which doesn't work across Windows/Linux/iOS) gets old fast. **Flit is the boring-but-instant answer:** a shared inbox that lives on your own network.
 
 ---
 
@@ -22,7 +22,7 @@ Emailing myself, DMing myself in some chat app, or fighting AirDrop (which doesn
 - **Self-cleaning** — items expire after a configurable TTL (default 1 hour), so nothing piles up.
 - **Optional shared token** — lock it down with a secret when you expose it beyond localhost.
 - **One binary** — pure Rust (axum), no database, no runtime dependencies.
-- **Send from anywhere** — a `drop` CLI for Linux/macOS, a PowerShell version for Windows, and an iOS/iPadOS Shortcut.
+- **Send from anywhere** — a `flit` CLI for Linux/macOS, a PowerShell version for Windows, and an iOS/iPadOS Shortcut.
 
 ---
 
@@ -47,11 +47,11 @@ curl -s localhost:7777/api/items | jq .
 
 | Variable        | Default        | Meaning                                      |
 | --------------- | -------------- | -------------------------------------------- |
-| `DROP_ADDR`     | `0.0.0.0:7777` | Listen address                               |
-| `DROP_TOKEN`    | _(empty)_      | Shared secret; empty = open                  |
-| `DROP_TTL_SECS` | `3600`         | Item lifetime in seconds; `0` = keep forever |
+| `FLIT_ADDR`     | `0.0.0.0:7777` | Listen address                               |
+| `FLIT_TOKEN`    | _(empty)_      | Shared secret; empty = open                  |
+| `FLIT_TTL_SECS` | `3600`         | Item lifetime in seconds; `0` = keep forever |
 
-Pass the token as a header `X-Drop-Token: <token>` or a query string `?token=<token>` (the web UI reads `?token=` from its own URL).
+Pass the token as a header `X-Flit-Token: <token>` or a query string `?token=<token>` (the web UI reads `?token=` from its own URL).
 
 ---
 
@@ -71,11 +71,11 @@ Pass the token as a header `X-Drop-Token: <token>` or a query string `?token=<to
 
 ## 💻 Clients
 
-- **CLI (Linux/macOS):** `bin/drop` — `drop "some text"`, `drop ./file.png`, or pipe `echo hi | drop`.
-- **Windows:** `bin/drop.ps1`.
+- **CLI (Linux/macOS):** `bin/flit` — `flit "some text"`, `flit ./file.png`, or pipe `echo hi | flit`.
+- **Windows:** `bin/flit.ps1`.
 - **iOS/iPadOS:** see [`shortcuts/ios-shortcut-guide.md`](shortcuts/ios-shortcut-guide.md) to add a one-tap Share Sheet action.
 
-  Point clients at the server with `DROP_URL` (and `DROP_TOKEN` if set).
+  Point clients at the server with `FLIT_URL` (and `FLIT_TOKEN` if set).
 
 ---
 
