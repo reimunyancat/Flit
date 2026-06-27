@@ -18,6 +18,20 @@ async function copy(t) {
   }
 }
 
+function isImage(name) {
+  return /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(name || "");
+}
+
+async function copyImage(id) {
+  try {
+    const blob = await fetch("/api/items/" + id + "/raw").then((r) => r.blob());
+    await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+    toast("이미지 복사됨");
+  } catch (e) {
+    toast("이 브라우저는 이미지 복사 불가 — 다운로드를 쓰세요");
+  }
+}
+
 function age(s) {
   const d = Math.max(0, Math.floor(Date.now() / 1000) - s);
   if (d < 60) return d + "s";
@@ -54,6 +68,14 @@ function render(items) {
         location.href = "/api/items/" + it.id + "/raw";
       };
       card.appendChild(b);
+      if (isImage(it.name)) {
+        const c = document.createElement("button");
+        c.className = "secondary";
+        c.textContent = "이미지 복사";
+        c.style.marginLeft = "8px";
+        c.onclick = () => copyImage(it.id);
+        card.appendChild(c);
+      }
     } else {
       const pre = document.createElement("pre");
       pre.textContent = it.text || "";

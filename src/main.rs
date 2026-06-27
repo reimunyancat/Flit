@@ -219,10 +219,13 @@ async fn app_js() -> Response {
 
 async fn events(State(state): State<AppState>) -> impl IntoResponse {
     let rx = state.tx.subscribe();
-    let stream = BroadcastStream::new(rx).filter_map(|msg| {
+    let initial = tokio_stream::once(Ok::<Event, std::convert::Infallible>(
+        Event::default().event("ready").data("ok"),
+    ));
+    let stream = initial.chain(BroadcastStream::new(rx).filter_map(|msg| {
         msg.ok()
             .map(|id| Ok::<_, std::convert::Infallible>(Event::default().event("item").data(id)))
-    });
+    }));
     Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
