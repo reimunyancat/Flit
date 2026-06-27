@@ -1,7 +1,5 @@
-use axum::extract::multipart::{self, Field};
 use axum::response::Html;
 use axum::response::sse::{Event, KeepAlive, Sse};
-use axum::serve::Listener;
 use axum::{
     Json, Router,
     extract::{Multipart, Path, State},
@@ -9,7 +7,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{delete, get, post},
 };
-use serde::{Serialize, ser};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -17,7 +15,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
-use uuid::{Uuid, uuid};
+use uuid::Uuid;
 
 #[derive(Clone, Serialize)]
 struct Item {
@@ -80,7 +78,7 @@ fn spawn_reaper(state: AppState) {
 }
 
 async fn icon() -> Response {
-    let svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='112' fill='#2dd672'/><path d='M406 106 L106 211 L241 271 Z' fill='#bdf0d0'/><path d='M406 106 L241 271 L301 406 Z' fill='#ffffff'/></svg>";
+    let svg = include_str!("../static/icon.svg");
     let mut h = HeaderMap::new();
     h.insert(
         header::CONTENT_TYPE,
