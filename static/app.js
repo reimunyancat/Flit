@@ -19,6 +19,7 @@ const STR = {
     imgAutoCopied: "이미지 자동 복사됨",
     longPress: "길게 눌러 복사",
     imgUnsupported: "이미지 복사 불가",
+    imgSent: "이미지 보냄",
     ago: "전",
     del: "삭제",
     copy: "복사",
@@ -41,6 +42,7 @@ const STR = {
     imgAutoCopied: "Image auto-copied",
     longPress: "Long-press to copy",
     imgUnsupported: "Can't copy image",
+    imgSent: "Image sent",
     ago: "ago",
     del: "Delete",
     copy: "Copy",
@@ -254,7 +256,11 @@ async function send() {
 async function sendFiles(files) {
   for (const f of files) {
     const fd = new FormData();
-    fd.append("file", f);
+    const name =
+      f.name && f.name !== "blob"
+        ? f.name
+        : "paste-" + Date.now() + "." + (f.type.split("/")[1] || "bin");
+    fd.append("file", f, name);
     await fetch("/api/file", { method: "POST", body: fd });
   }
 }
@@ -264,6 +270,21 @@ document.getElementById("text").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
     send();
+  }
+});
+document.getElementById("text").addEventListener("paste", (e) => {
+  const items = (e.clipboardData && e.clipboardData.items) || [];
+  const imgs = [];
+  for (const it of items) {
+    if (it.kind === "file" && it.type.startsWith("image/")) {
+      const f = it.getAsFile();
+      if (f) imgs.push(f);
+    }
+  }
+  if (imgs.length) {
+    e.preventDefault();
+    sendFiles(imgs);
+    toast(t("imgSent"));
   }
 });
 document.getElementById("file").onchange = async (e) => {
@@ -278,6 +299,12 @@ document.getElementById("clear").onclick = async () => {
 };
 document.getElementById("lang").onclick = () =>
   setLang(LANG === "ko" ? "en" : "ko");
+
+const autocopyEl = document.getElementById("autocopy");
+autocopyEl.checked = localStorage.getItem("flit_autocopy") !== "0";
+autocopyEl.addEventListener("change", () => {
+  localStorage.setItem("flit_autocopy", autocopyEl.checked ? "1" : "0");
+});
 
 function connect() {
   const ev = new EventSource("/api/events");
