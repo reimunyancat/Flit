@@ -1,3 +1,73 @@
+const LANG = (localStorage.getItem("flit_lang") || navigator.language || "en")
+  .toLowerCase()
+  .startsWith("ko")
+  ? "ko"
+  : "en";
+const STR = {
+  ko: {
+    autocopyLabel: "자동 복사",
+    clear: "전체 지우기",
+    send: "보내기",
+    file: "파일",
+    placeholder: "텍스트나 링크를 붙여넣고 Enter...",
+    connecting: "연결 중...",
+    connected: "실시간 연결됨",
+    reconnecting: "재연결 중...",
+    copied: "복사됨",
+    autoCopied: "자동 복사됨",
+    imgCopied: "이미지 복사됨",
+    imgAutoCopied: "이미지 자동 복사됨",
+    longPress: "길게 눌러 복사",
+    imgUnsupported: "이미지 복사 불가",
+    ago: "전",
+    del: "삭제",
+    copy: "복사",
+    copyImg: "이미지 복사",
+    open: "열기",
+    confirmClear: "전체 삭제할까요?",
+  },
+  en: {
+    autocopyLabel: "Auto-copy",
+    clear: "Clear all",
+    send: "Send",
+    file: "File",
+    placeholder: "Paste text or a link, then Enter...",
+    connecting: "Connecting...",
+    connected: "Live",
+    reconnecting: "Reconnecting...",
+    copied: "Copied",
+    autoCopied: "Auto-copied",
+    imgCopied: "Image copied",
+    imgAutoCopied: "Image auto-copied",
+    longPress: "Long-press to copy",
+    imgUnsupported: "Can't copy image",
+    ago: "ago",
+    del: "Delete",
+    copy: "Copy",
+    copyImg: "Copy image",
+    open: "Open",
+    confirmClear: "Clear everything?",
+  },
+};
+function t(k) {
+  return (STR[LANG] && STR[LANG][k]) || STR.en[k] || k;
+}
+function applyI18n() {
+  document.documentElement.lang = LANG;
+  document.querySelectorAll("[data-i18n]").forEach((el) => {
+    el.textContent = t(el.getAttribute("data-i18n"));
+  });
+  document.querySelectorAll("[data-i18n-ph]").forEach((el) => {
+    el.placeholder = t(el.getAttribute("data-i18n-ph"));
+  });
+  const lb = document.getElementById("lang");
+  if (lb) lb.textContent = LANG === "ko" ? "EN" : "한";
+}
+function setLang(l) {
+  localStorage.setItem("flit_lang", l);
+  location.reload();
+}
+
 const listEl = document.getElementById("list");
 const statusEl = document.getElementById("status");
 const toastEl = document.getElementById("toast");
@@ -10,12 +80,12 @@ function toast(m) {
   setTimeout(() => toastEl.classList.remove("show"), 1200);
 }
 
-async function copy(t) {
+async function copy(text) {
   try {
-    await navigator.clipboard.writeText(t);
-    toast("복사됨");
+    await navigator.clipboard.writeText(text);
+    toast(t("copied"));
   } catch (e) {
-    toast("길게 눌러 복사");
+    toast(t("longPress"));
   }
 }
 
@@ -27,9 +97,9 @@ async function copyImage(id) {
   try {
     const blob = await fetch("/api/items/" + id + "/raw").then((r) => r.blob());
     await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-    toast("이미지 복사됨");
+    toast(t("imgCopied"));
   } catch (e) {
-    toast("이미지 복사 불가");
+    toast(t("imgUnsupported"));
   }
 }
 
@@ -43,10 +113,10 @@ async function doCopy(item) {
       await navigator.clipboard.write([
         new ClipboardItem({ [blob.type]: blob }),
       ]);
-      toast("이미지 자동 복사됨");
+      toast(t("imgAutoCopied"));
     } else {
       await navigator.clipboard.writeText(item.text || "");
-      toast("자동 복사됨");
+      toast(t("autoCopied"));
     }
     return true;
   } catch (e) {
@@ -90,11 +160,11 @@ function render(items) {
     card.className = "card";
     const meta = document.createElement("div");
     meta.className = "meta";
-    meta.innerHTML = `<span class="tag">${it.kind}</span><span>${age(it.created)} 전</span>`;
+    meta.innerHTML = `<span class="tag">${it.kind}</span><span>${age(it.created)} ${t("ago")}</span>`;
     const del = document.createElement("span");
     del.className = "del";
     del.textContent = "✕";
-    del.title = "삭제";
+    del.title = t("del");
     del.onclick = () => remove(it.id);
     meta.appendChild(del);
     card.appendChild(meta);
@@ -109,7 +179,7 @@ function render(items) {
       if (isImage(it.name)) {
         const c = document.createElement("button");
         c.className = "secondary";
-        c.textContent = "이미지 복사";
+        c.textContent = t("copyImg");
         c.style.marginLeft = "8px";
         c.onclick = () => copyImage(it.id);
         card.appendChild(c);
@@ -120,7 +190,7 @@ function render(items) {
       card.appendChild(pre);
       const b = document.createElement("button");
       b.className = "secondary";
-      b.textContent = "복사";
+      b.textContent = t("copy");
       b.style.marginTop = "8px";
       b.onclick = () => copy(it.text || "");
       card.appendChild(b);
@@ -128,7 +198,7 @@ function render(items) {
         const o = document.createElement("a");
         o.href = it.text;
         o.target = "_blank";
-        o.textContent = " 열기";
+        o.textContent = " " + t("open");
         o.style.marginLeft = "8px";
         card.appendChild(o);
       }
@@ -160,7 +230,7 @@ async function refreshAndMaybeCopy() {
     top.id !== lastTop &&
     document.getElementById("autocopy").checked
   )
-    autocopy(top.text || "");
+    autocopy(top);
   lastTop = top.id;
 }
 
@@ -201,24 +271,27 @@ document.getElementById("file").onchange = async (e) => {
   e.target.value = "";
 };
 document.getElementById("clear").onclick = async () => {
-  if (confirm("전체 삭제할까요?")) {
+  if (confirm(t("confirmClear"))) {
     await fetch("/api/items", { method: "DELETE" });
     load();
   }
 };
+document.getElementById("lang").onclick = () =>
+  setLang(LANG === "ko" ? "en" : "ko");
 
 function connect() {
   const ev = new EventSource("/api/events");
   ev.onopen = () => {
-    statusEl.textContent = "실시간 연결됨";
+    statusEl.textContent = t("connected");
   };
   ev.addEventListener("item", () => refreshAndMaybeCopy());
   ev.onerror = () => {
-    statusEl.textContent = "재연결 중...";
+    statusEl.textContent = t("reconnecting");
   };
 }
 
 (async () => {
+  applyI18n();
   const items = await load();
   if (items && items.length) lastTop = items[0].id;
   connect();

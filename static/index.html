@@ -155,20 +155,28 @@
           style="margin-right: 7px"
         />Flit
       </h1>
-      <label><input type="checkbox" id="autocopy" checked />자동 복사</label>
-      <button class="secondary" id="clear">전체 지우기</button>
-      <span id="status">연결 중...</span>
+      <label
+        ><input type="checkbox" id="autocopy" checked /><span
+          data-i18n="autocopyLabel"
+          >자동 복사</span
+        ></label
+      >
+      <button class="secondary" id="clear" data-i18n="clear">전체 지우기</button>
+      <span id="status" data-i18n="connecting">연결 중...</span>
+      <button class="secondary" id="lang">EN</button>
     </header>
     <main>
       <div class="composer">
         <textarea
           id="text"
           placeholder="텍스트나 링크를 붙여넣고 Enter..."
+          data-i18n-ph="placeholder"
         ></textarea>
         <div style="display: flex; flex-direction: column; gap: 6px">
-          <button id="send">보내기</button>
+          <button id="send" data-i18n="send">보내기</button>
           <label class="secondary" style="cursor: pointer; text-align: center"
-            >파일<input type="file" id="file" multiple style="display: none"
+            ><span data-i18n="file">파일</span
+            ><input type="file" id="file" multiple style="display: none"
           /></label>
         </div>
       </div>
