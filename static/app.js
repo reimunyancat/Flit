@@ -2,6 +2,7 @@ const listEl = document.getElementById("list");
 const statusEl = document.getElementById("status");
 const toastEl = document.getElementById("toast");
 let lastTop = null;
+let pendingCopy = null;
 
 function toast(m) {
   toastEl.textContent = m;
@@ -28,9 +29,46 @@ async function copyImage(id) {
     await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
     toast("이미지 복사됨");
   } catch (e) {
-    toast("이 브라우저는 이미지 복사 불가 — 다운로드를 쓰세요");
+    toast("이미지 복사 불가");
   }
 }
+
+async function doCopy(item) {
+  try {
+    if (item.kind === "file") {
+      if (!isImage(item.name)) return false;
+      const blob = await fetch("/api/items/" + item.id + "/raw").then((r) =>
+        r.blob(),
+      );
+      await navigator.clipboard.write([
+        new ClipboardItem({ [blob.type]: blob }),
+      ]);
+      toast("이미지 자동 복사됨");
+    } else {
+      await navigator.clipboard.writeText(item.text || "");
+      toast("자동 복사됨");
+    }
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function autocopy(item) {
+  if (item.kind === "file" && !isImage(item.name)) return;
+  if (document.hasFocus() && (await doCopy(item))) return;
+  pendingCopy = item;
+}
+
+async function flushPending() {
+  if (!pendingCopy) return;
+  const it = pendingCopy;
+  if (await doCopy(it)) pendingCopy = null;
+}
+
+window.addEventListener("focus", flushPending);
+document.addEventListener("pointerdown", flushPending);
+document.addEventListener("keydown", flushPending);
 
 function age(s) {
   const d = Math.max(0, Math.floor(Date.now() / 1000) - s);
@@ -120,10 +158,9 @@ async function refreshAndMaybeCopy() {
   if (
     lastTop &&
     top.id !== lastTop &&
-    document.getElementById("autocopy").checked &&
-    top.kind !== "file"
+    document.getElementById("autocopy").checked
   )
-    copy(top.text || "");
+    autocopy(top.text || "");
   lastTop = top.id;
 }
 
