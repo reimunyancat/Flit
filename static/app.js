@@ -171,6 +171,23 @@ function render(items) {
     meta.appendChild(del);
     card.appendChild(meta);
     if (it.kind === "file") {
+      const raw = "/api/items/" + it.id + "/raw";
+      if (isImage(it.name)) {
+        const img = document.createElement("img");
+        img.src = raw;
+        img.alt = it.name;
+        img.style.cssText =
+          "display:block;max-width:100%;max-height:320px;border-radius:8px;margin-bottom:8px;cursor:pointer";
+        img.onclick = () => window.open(raw, "_blank");
+        card.appendChild(img);
+      } else if (isPdf(it.name)) {
+        const pv = document.createElement("embed");
+        pv.src = raw;
+        pv.type = "application/pdf";
+        pv.style.cssText =
+          "display:block;width:100%;height:360px;border:1px solid #2a2a2a;border-radius:8px;margin-bottom:8px";
+        card.appendChild(pv);
+      }
       const b = document.createElement("button");
       b.className = "secondary";
       b.textContent = "⬇ " + it.name + " (" + fmtSize(it.size) + ")";
@@ -185,6 +202,9 @@ function render(items) {
         c.style.marginLeft = "8px";
         c.onclick = () => copyImage(it.id);
         card.appendChild(c);
+      }
+      function isPdf(name) {
+        return /\.pdf$/i.test(name || "");
       }
     } else {
       const pre = document.createElement("pre");
