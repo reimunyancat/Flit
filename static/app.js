@@ -20,6 +20,8 @@ const STR = {
     longPress: "길게 눌러 복사",
     imgUnsupported: "이미지 복사 불가",
     imgSent: "이미지 보냄",
+    fileSent: "파일 보냄",
+    dropHere: "여기에 놓으세요",
     ago: "전",
     del: "삭제",
     copy: "복사",
@@ -43,6 +45,8 @@ const STR = {
     longPress: "Long-press to copy",
     imgUnsupported: "Can't copy image",
     imgSent: "Image sent",
+    fileSent: "File sent",
+    dropHere: "Drop to send",
     ago: "ago",
     del: "Delete",
     copy: "Copy",
@@ -292,19 +296,19 @@ document.getElementById("text").addEventListener("keydown", (e) => {
     send();
   }
 });
-document.getElementById("text").addEventListener("paste", (e) => {
+document.addEventListener("paste", (e) => {
   const items = (e.clipboardData && e.clipboardData.items) || [];
-  const imgs = [];
+  const files = [];
   for (const it of items) {
-    if (it.kind === "file" && it.type.startsWith("image/")) {
+    if (it.kind === "file") {
       const f = it.getAsFile();
-      if (f) imgs.push(f);
+      if (f) files.push(f);
     }
   }
-  if (imgs.length) {
+  if (files.length) {
     e.preventDefault();
-    sendFiles(imgs);
-    toast(t("imgSent"));
+    sendFiles(files);
+    toast(t("fileSent"));
   }
 });
 document.getElementById("file").onchange = async (e) => {
@@ -337,6 +341,31 @@ function connect() {
   };
 }
 
+const dropzone = document.getElementById("dropzone");
+let dragDepth = 0;
+window.addEventListener("dragenter", (e) => {
+  e.preventDefault();
+  dragDepth++;
+  dropzone.classList.add("show");
+});
+window.addEventListener("dragover", (e) => {
+  e.preventDefault();
+});
+window.addEventListener("dragleave", (e) => {
+  e.preventDefault();
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (dragDepth === 0) dragzone.classList.remove("show");
+});
+window.addEventListener("drop", (e) => {
+  e.preventDefault();
+  dragDepth = 0;
+  dropzone.classList.remove("show");
+  const files = e.dataTransfer && e.dataTransfer.files;
+  if (files && files.length) {
+    sendFiles(files);
+    toast(t("fileSent"));
+  }
+});
 (async () => {
   applyI18n();
   const items = await load();

@@ -142,6 +142,23 @@
       .toast.show {
         opacity: 1;
       }
+      .dropzone {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: rgba(15, 15, 15, 0.85);
+        border: 3px dashed #2dd672;
+        color: #2dd672;
+        font-size: 22px;
+        font-weight: 700;
+        z-index: 20;
+        pointer-events: none;
+      }
+      .dropzone.show {
+        display: flex;
+      }
     </style>
   </head>
   <body>
@@ -161,7 +178,9 @@
           >자동 복사</span
         ></label
       >
-      <button class="secondary" id="clear" data-i18n="clear">전체 지우기</button>
+      <button class="secondary" id="clear" data-i18n="clear">
+        전체 지우기
+      </button>
       <span id="status" data-i18n="connecting">연결 중...</span>
       <button class="secondary" id="lang">EN</button>
     </header>
@@ -183,6 +202,9 @@
       <div id="list"></div>
     </main>
     <div class="toast" id="toast"></div>
+    <div class="dropzone" id="dropzone">
+      <span data-i18n="dropHere">여기에 놓으세요</span>
+    </div>
     <script src="./app.js"></script>
   </body>
 </html>

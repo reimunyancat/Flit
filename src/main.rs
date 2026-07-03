@@ -4,7 +4,7 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::serve::Listener;
 use axum::{
     Json, Router,
-    extract::{Multipart, Path, State},
+    extract::{DefaultBodyLimit, Multipart, Path, State},
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
     routing::{delete, get, post},
@@ -239,6 +239,10 @@ async fn main() {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(3600);
+    let max_mb: usize = std::env::var("FLIT_MAX_MB")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1024);
     let (tx, _rx) = broadcast::channel::<String>(256);
     let state = AppState {
         items: Arc::new(Mutex::new(HashMap::new())),
@@ -258,6 +262,7 @@ async fn main() {
         .route("/api/items/{id}/raw", get(get_raw))
         .route("/api/items/{id}", delete(delete_item))
         .route("/api/events", get(events))
+        .layer(DefaultBodyLimit::max(max_mb * 1024 * 1024))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
