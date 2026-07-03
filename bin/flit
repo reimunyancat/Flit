@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+FLIT_URL="${FLIT_URL:-http://127.0.0.1:7777}"
+
+usage() {
+    cat << EOF
+flit — drop anything into your Flit inbox
+
+Usage:
+  flit <text...>     send text
+  flit -f <file>     send a file
+  echo hi | flit     send stdin as text
+  flit -l            list recent items
+EOF
+  exit 1
+}
+
+if [ ! -t 0 ]; then
+    body="$(cat)"
+    [ -z "$body" ] && exit 0
+    curl -fsS -X POST "$FLIT_URL/api/text" \
+        -H "Content-Type: text/plain" \
+        --data-binary "$body" >/dev/null
+    echo "sent (text, stdin)"
+    exit 0
+fi
+
+[ $# -eq 0 ] && usage
+
+case "$1" in
+    -l | --list)
+        curl -fsS "$FLIT_URL/api/items"
+        echo
+        ;;
+    -f | --file)
+        shift
+        [ $# -eq 0 ] && usage
+        for f in "$@"; do
+            [ -f "$f" ] || {
+                echo "not a file: $f" >&2
+                exit 1
+            }
+            curl -fsS -X POST "$FLIT_URL/api/file" -F "file=@$f" >/dev/null
+            echo "sent (file): $f"
+        done
+        ;;
+    -h | --help)
+        usage
+        ;;
+    *)
+        body="$*"
+        curl -fsS -X POST "$FLIT_URL/api/text" \
+            -H "Content-Type: text/plain" \
+            --data-binary "$body" >/dev/null
+        echo "sent (text)"
+        ;;
+    esac
+
+

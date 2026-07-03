@@ -217,6 +217,15 @@ async fn app_js() -> Response {
     (h, include_str!("../static/app.js")).into_response()
 }
 
+async fn styles() -> Response {
+    let mut h = HeaderMap::new();
+    h.insert(
+        header::CONTENT_TYPE,
+        header::HeaderValue::from_static("text/css; charset=utf-8"),
+    );
+    (h, include_str!("../static/style.css")).into_response()
+}
+
 async fn events(State(state): State<AppState>) -> impl IntoResponse {
     let rx = state.tx.subscribe();
     let initial = tokio_stream::once(Ok::<Event, std::convert::Infallible>(
@@ -254,6 +263,7 @@ async fn main() {
     let app = Router::new()
         .route("/", get(index))
         .route("/app.js", get(app_js))
+        .route("/style.css", get(styles))
         .route("/health", get(health))
         .route("/icon.svg", get(icon))
         .route("/api/text", post(post_text))
