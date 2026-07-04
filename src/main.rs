@@ -293,7 +293,7 @@ async fn auth(State(state): State<AppState>, req: Request, next: Next) -> Respon
     let mut res = next.run(req).await;
 
     if from_query {
-        if let Ok(v) = format!("file_token={expected}; Path=/; HttpOnly; SameSite=Lax").parse() {
+        if let Ok(v) = format!("flit_token={expected}; Path=/; HttpOnly; SameSite=Lax").parse() {
             res.headers_mut().insert(header::SET_COOKIE, v);
         }
     }
@@ -337,6 +337,7 @@ async fn main() {
         .route("/api/items/{id}/raw", get(get_raw))
         .route("/api/items/{id}", delete(delete_item))
         .route("/api/events", get(events))
+        .route_layer(middleware::from_fn_with_state(state.clone(), auth))
         .layer(DefaultBodyLimit::max(max_mb * 1024 * 1024))
         .with_state(state);
 

@@ -3,7 +3,7 @@ set -euo pipefail
 
 FLIT_URL="${FLIT_URL:-http://127.0.0.1:7777}"
 AUTH=()
-[ -n "$(FLIT_TOKEN:-)" ] && AUTH=(-H "Authorization: Bearer $FLIT_TOKEN")
+[ -n "${FLIT_TOKEN:-}" ] && AUTH=(-H "Authorization: Bearer $FLIT_TOKEN")
 
 usage() {
     cat << EOF
