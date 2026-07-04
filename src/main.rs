@@ -4,11 +4,13 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::serve::Listener;
 use axum::{
     Json, Router,
-    extract::{DefaultBodyLimit, Multipart, Path, State},
+    extract::{DefaultBodyLimit, Multipart, Path, Request, State},
     http::{HeaderMap, StatusCode, header},
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{delete, get, post},
 };
+use serde::de::Expected;
 use serde::{Serialize, ser};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -39,6 +41,7 @@ struct AppState {
     items: Arc<Mutex<HashMap<String, Item>>>,
     tx: broadcast::Sender<String>,
     ttl: u64,
+    token: Option<String>,
 }
 
 fn now() -> u64 {
@@ -238,6 +241,66 @@ async fn events(State(state): State<AppState>) -> impl IntoResponse {
     Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
+async fn auth(State(state): State<AppState>, req: Request, next: Next) -> Response {
+    let Some(expected) = state.token.clone() else {
+        return next.run(req).await;
+    };
+
+    if req.uri().path() == "/health" {
+        return next.run(req).await;
+    }
+
+    let headers = req.headers();
+    let mut provided: Option<String> = None;
+    let mut from_query = false;
+
+    if let Some(v) = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+    {
+        if let Some(t) = v.strip_prefix("Bearer ") {
+            provided = Some(t.trim().to_string());
+        }
+    }
+
+    if provided.is_none() {
+        if let Some(q) = req.uri().query() {
+            for pair in q.split('&') {
+                if let Some(t) = pair.strip_prefix("token=") {
+                    provided = Some(t.to_string());
+                    from_query = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    if provided.is_none() {
+        if let Some(c) = headers.get(header::COOKIE).and_then(|v| v.to_str().ok()) {
+            for pair in c.split(';') {
+                if let Some(t) = pair.trim().strip_prefix("flit_token=") {
+                    provided = Some(t.to_string());
+                    break;
+                }
+            }
+        }
+    }
+
+    if provided.as_deref() != Some(expected.as_str()) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+
+    let mut res = next.run(req).await;
+
+    if from_query {
+        if let Ok(v) = format!("file_token={expected}; Path=/; HttpOnly; SameSite=Lax").parse() {
+            res.headers_mut().insert(header::SET_COOKIE, v);
+        }
+    }
+
+    res
+}
+
 #[tokio::main]
 async fn main() {
     let addr: SocketAddr = std::env::var("FLIT_ADDR")
@@ -252,11 +315,13 @@ async fn main() {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(1024);
+    let token = std::env::var("FLIT_TOKEN").ok().filter(|s| !s.is_empty());
     let (tx, _rx) = broadcast::channel::<String>(256);
     let state = AppState {
         items: Arc::new(Mutex::new(HashMap::new())),
         tx,
         ttl,
+        token,
     };
     spawn_reaper(state.clone());
 

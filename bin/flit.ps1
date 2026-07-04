@@ -6,6 +6,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 $FlitUrl = if ($env:FLIT_URL) { $env:FLIT_URL } else { "http://127.0.0.1:7777" }
+$Headers = @{}
+if ($env:FLIT_TOKEN) { $Headers["Authorization"] = "Bearer $($env:FLIT_TOKEN)" }
 
 function Show-Usage {
     @"
@@ -23,8 +25,8 @@ Usage:
 if ([Console]::IsInputRedirected) {
     $body = [Console]::In.ReadToEnd()
     if (-not [String]::IsNullOrWhiteSpace($body)) {
-        Invoke-RestMethod -Uri "$FlitUrl/api/text" -Method Post `
-            -ContentType "text/plain; charset=utf-8" -Body $body | Out-IsNullOrWhiteSpace
+        Invoke-RestMethod -Uri "$FlitUrl/api/text" -Method Post -Headers $Headers `
+            -ContentType "text/plain; charset=utf-8" -Body $body | Out-Null
         Write-Host "sent (text, stdin)"
     }
     exit 0
@@ -33,8 +35,8 @@ if ([Console]::IsInputRedirected) {
 if ($Rest.Count -eq 0) { Show-Usage }
 
 switch ($Rest[0]) {
-    { $_ -in "-1", "--list"}{
-        Invoke-RestMethod -Uri "$FlitUrl/api/items" | ConvertTo-Json -Depth 5
+    { $_ -in "-l", "--list"} {
+        Invoke-RestMethod -Uri "$FlitUrl/api/items" -Headers $Headers | ConvertTo-Json -Depth 5
         break
     }
     { $_ -in "-f", "--file"} {
@@ -45,7 +47,7 @@ switch ($Rest[0]) {
                 Write-Error "not a file: $f"
                 exit 1
             }
-            Invoke-RestMethod -Uri "$FlitUrl/api/file" -Method Post `
+            Invoke-RestMethod -Uri "$FlitUrl/api/file" -Method Post Headers $Headers `
                 -Form @{ file = Get-Item -LiteralPath $f} | Out-Null
             Write-Host "sent (file): $f"
         }
@@ -54,7 +56,7 @@ switch ($Rest[0]) {
     { $_ -in "-h", "--help" } { Show-Usage }
     default {
         $body = $Rest -join " "
-        Invoke-RestMethod -Uri "$FlitUrl/api/text" -Method Post `
+        Invoke-RestMethod -Uri "$FlitUrl/api/text" -Method Post Headers $Headers `
             -ContentType "text/plain; charset=utf-8" -Body $body | Out-Null
         Write-Host "sent (text)"
     }

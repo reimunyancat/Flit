@@ -2,6 +2,8 @@
 set -euo pipefail
 
 FLIT_URL="${FLIT_URL:-http://127.0.0.1:7777}"
+AUTH=()
+[ -n "$(FLIT_TOKEN:-)" ] && AUTH=(-H "Authorization: Bearer $FLIT_TOKEN")
 
 usage() {
     cat << EOF
@@ -19,7 +21,7 @@ EOF
 if [ ! -t 0 ]; then
     body="$(cat)"
     [ -z "$body" ] && exit 0
-    curl -fsS -X POST "$FLIT_URL/api/text" \
+    curl -fsS "${AUTH[@]}" -X POST "$FLIT_URL/api/text" \
         -H "Content-Type: text/plain" \
         --data-binary "$body" >/dev/null
     echo "sent (text, stdin)"
@@ -30,7 +32,7 @@ fi
 
 case "$1" in
     -l | --list)
-        curl -fsS "$FLIT_URL/api/items"
+        curl -fsS "${AUTH[@]}" "$FLIT_URL/api/items"
         echo
         ;;
     -f | --file)
@@ -41,7 +43,7 @@ case "$1" in
                 echo "not a file: $f" >&2
                 exit 1
             }
-            curl -fsS -X POST "$FLIT_URL/api/file" -F "file=@$f" >/dev/null
+            curl -fsS "${AUTH[@]}" -X POST "$FLIT_URL/api/file" -F "file=@$f" >/dev/null
             echo "sent (file): $f"
         done
         ;;
@@ -50,7 +52,7 @@ case "$1" in
         ;;
     *)
         body="$*"
-        curl -fsS -X POST "$FLIT_URL/api/text" \
+        curl -fsS "${AUTH[@]}" -X POST "$FLIT_URL/api/text" \
             -H "Content-Type: text/plain" \
             --data-binary "$body" >/dev/null
         echo "sent (text)"
