@@ -303,10 +303,15 @@ async fn auth(State(state): State<AppState>, req: Request, next: Next) -> Respon
 
 #[tokio::main]
 async fn main() {
-    let addr: SocketAddr = std::env::var("FLIT_ADDR")
-        .unwrap_or_else(|_| "0.0.0.0:7777".into())
-        .parse()
-        .expect("FLIT_ADDR must be host:port");
+    let addr: SocketAddr = match std::env::var("PORT") {
+        Ok(p) => format!("0.0.0.0:{p}")
+            .parse()
+            .expect("PORT must be a valid port number"),
+        Err(_) => std::env::var("FLIT_ADDR")
+            .unwrap_or_else(|_| "0.0.0.0:7777".into())
+            .parse()
+            .expect("FLIT_ADDR must be host:port"),
+    };
     let ttl: u64 = std::env::var("FLIT_TTL_SECS")
         .ok()
         .and_then(|s| s.parse().ok())
