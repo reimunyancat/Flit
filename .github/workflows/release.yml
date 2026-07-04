@@ -9,56 +9,61 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    name: build $ matrix.asset
-    runs-on: $ matrix.os
-    strategy:
-      fall-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            bin: flit-server
-            asset: flit-server-linux-x86_64
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            bin: flit-server
-            asset: flit-server-macos-arm64
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            bin: flit-server.exe
-            asset: flit-server-windows-x86_64.exe
-      steps:
-        - uses: actions/checkout@v4
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release
+      - name: package
+        run: |
+          mkdir -p dist
+          cp target/release/flit-server dist/flit-server-linux-x86_64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flit-server-linux-x86_64
+          path: dist/flit-server-linux-x86_64
 
-        - uses: dtolnay/rust-toolchain@stable
-          with:
-            targets: $ matrix.target
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release
+      - name: package
+        run: |
+          mkdir -p dist
+          cp target/release/flit-server dist/flit-server-macos-arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flit-server-macos-arm64
+          path: dist/flit-server-macos-arm64
 
-        - name: build
-          run: cargo build --release --target $ matrix.target
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release
+      - name: package
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp target/release/flit-server.exe dist/flit-server-windows-x86_64.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flit-server-windows-x86_64.exe
+          path: dist/flit-server-windows-x86_64.exe
 
-        - name: package
-          shell: bash
-          run: |
-            mkdir -p dist
-            cp "target/$ matrix.target /release/$ matrix.bin " "dist/$ matrix.asset "
-
-        - uses: actions/upload-artifact@v4
-          with:
-            name: $ matrix.asset
-            path: dist/$ matrix.asset
-
-    release:
-      needs: build
-      runs-on: ubuntu-latest
-      steps:
-        - uses: actions/download-artifact@v4
-          with:
-            path: dist
-            merge-multiple: true
-
-        - uses: softprops/action-gh-release@v3
-          with:
-            files: dist/*
-            generate_release_notes: true
+  release:
+    needs: [build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: dist/*
+          generate_release_notes: true
