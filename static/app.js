@@ -99,6 +99,10 @@ function isImage(name) {
   return /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(name || "");
 }
 
+function isPdf(name) {
+  return /\.pdf$/i.test(name || "");
+}
+
 async function copyImage(id) {
   try {
     const blob = await fetch("/api/items/" + id + "/raw").then((r) => r.blob());
@@ -206,9 +210,6 @@ function render(items) {
         c.style.marginLeft = "8px";
         c.onclick = () => copyImage(it.id);
         card.appendChild(c);
-      }
-      function isPdf(name) {
-        return /\.pdf$/i.test(name || "");
       }
     } else {
       const pre = document.createElement("pre");
@@ -354,7 +355,7 @@ window.addEventListener("dragover", (e) => {
 window.addEventListener("dragleave", (e) => {
   e.preventDefault();
   dragDepth = Math.max(0, dragDepth - 1);
-  if (dragDepth === 0) dragzone.classList.remove("show");
+  if (dragDepth === 0) dropzone.classList.remove("show");
 });
 window.addEventListener("drop", (e) => {
   e.preventDefault();
