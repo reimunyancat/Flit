@@ -6,6 +6,14 @@
 
 ##
 
+---
+
+## 🌐 Try it lives
+
+There's a public one running at <https://flit-xw2a.onrender.com> - poke at it before you bother self-hosting.
+
+Fair warning: it's wide-open wall, so anyone can post and everyone can read it. Don't drop anything you'd mind a stranger seeing. Things auto-expire after 10 minutes, uploads cap out at 5MB, and since it's on a free box it dozes off when idle - the first hit might take a few seconds to wake it up.
+
 ## 🤔 Why
 
 Moving a small thing between devices is weirdly annoying. A link on my phone I want on my laptop, a screenshot from my laptop I want on my home server, a snippet between two machines that don't share an OS — every option breaks my flow.
@@ -74,6 +82,7 @@ Pass the token as a header `X-Flit-Token: <token>` or a query string `?token=<to
 - **CLI (Linux/macOS):** `bin/flit` — `flit "some text"`, `flit ./file.png`, or pipe `echo hi | flit`.
 - **Windows:** `bin/flit.ps1`.
 - **iOS/iPadOS:** see [`shortcuts/ios-shortcut-guide.md`](shortcuts/ios-shortcut-guide.md) to add a one-tap Share Sheet action.
+- **Android:** see [`shortcuts/android-guide.md`](shortcuts/android-guide.md) — same idea, via the open-source **HTTP Shortcuts** app.
 
   Point clients at the server with `FLIT_URL` (and `FLIT_TOKEN` if set).
 

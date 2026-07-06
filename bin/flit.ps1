@@ -47,7 +47,7 @@ switch ($Rest[0]) {
                 Write-Error "not a file: $f"
                 exit 1
             }
-            Invoke-RestMethod -Uri "$FlitUrl/api/file" -Method Post Headers $Headers `
+            Invoke-RestMethod -Uri "$FlitUrl/api/file" -Method Post -Headers $Headers `
                 -Form @{ file = Get-Item -LiteralPath $f} | Out-Null
             Write-Host "sent (file): $f"
         }
@@ -56,7 +56,7 @@ switch ($Rest[0]) {
     { $_ -in "-h", "--help" } { Show-Usage }
     default {
         $body = $Rest -join " "
-        Invoke-RestMethod -Uri "$FlitUrl/api/text" -Method Post Headers $Headers `
+        Invoke-RestMethod -Uri "$FlitUrl/api/text" -Method Post -Headers $Headers `
             -ContentType "text/plain; charset=utf-8" -Body $body | Out-Null
         Write-Host "sent (text)"
     }
