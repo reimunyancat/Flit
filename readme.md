@@ -8,7 +8,7 @@
 
 ---
 
-## 🌐 Try it lives
+## 🌐 Try it live
 
 There's a public one running at <https://flit-xw2a.onrender.com> - poke at it before you bother self-hosting.
 
@@ -27,7 +27,7 @@ Emailing myself, DMing myself in some chat app, or fighting AirDrop (which doesn
 - **Send anything** — plain text, URLs (auto-detected as links), or file uploads.
 - **Live inbox** — a clean web page that updates in real time over SSE; new drops appear instantly on every open device.
 - **Auto-copy** — opt in and the newest text/link lands straight on your clipboard the moment it arrives.
-- **Self-cleaning** — items expire after a configurable TTL (default 1 hour), so nothing piles up.
+- **Self-cleaning** — items expire after a configurable TTL (default 10 minutes), so nothing piles up.
 - **Optional shared token** — lock it down with a secret when you expose it beyond localhost.
 - **One binary** — pure Rust (axum), no database, no runtime dependencies.
 - **Send from anywhere** — a `flit` CLI for Linux/macOS, a PowerShell version for Windows, and an iOS/iPadOS Shortcut.
@@ -53,13 +53,15 @@ curl -s localhost:7777/api/items | jq .
 
 ## ⚙️ Configuration
 
-| Variable        | Default        | Meaning                                      |
-| --------------- | -------------- | -------------------------------------------- |
-| `FLIT_ADDR`     | `0.0.0.0:7777` | Listen address                               |
-| `FLIT_TOKEN`    | _(empty)_      | Shared secret; empty = open                  |
-| `FLIT_TTL_SECS` | `3600`         | Item lifetime in seconds; `0` = keep forever |
+| Variable        | Default        | Meaning                                        |
+| --------------- | -------------- | ---------------------------------------------- |
+| `FLIT_ADDR`     | `0.0.0.0:7777` | Listen address                                 |
+| `PORT`          | _(unset)_      | Overrides `FLIT_ADDR`; used by hosts like Render |
+| `FLIT_TOKEN`    | _(empty)_      | Shared secret; empty = open                    |
+| `FLIT_TTL_SECS` | `600`          | Item lifetime in seconds; `0` = keep forever   |
+| `FLIT_MAX_MB`   | `5`            | Max upload size in MB                           |
 
-Pass the token as a header `X-Flit-Token: <token>` or a query string `?token=<token>` (the web UI reads `?token=` from its own URL).
+Pass the token as a header `Authorization: Bearer <token>` or a query string `?token=<token>` (the web UI reads `?token=` from its own URL).
 
 ---
 
