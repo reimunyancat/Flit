@@ -1,7 +1,5 @@
-use axum::extract::multipart::{self, Field};
 use axum::response::Html;
 use axum::response::sse::{Event, KeepAlive, Sse};
-use axum::serve::Listener;
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, Multipart, Path, Request, State},
@@ -10,8 +8,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{delete, get, post},
 };
-use serde::de::Expected;
-use serde::{Serialize, ser};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -19,7 +16,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
-use uuid::{Uuid, uuid};
+use uuid::Uuid;
 
 #[derive(Clone, Serialize)]
 struct Item {
@@ -315,11 +312,11 @@ async fn main() {
     let ttl: u64 = std::env::var("FLIT_TTL_SECS")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(3600);
+        .unwrap_or(600);
     let max_mb: usize = std::env::var("FLIT_MAX_MB")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(1024);
+        .unwrap_or(5);
     let token = std::env::var("FLIT_TOKEN").ok().filter(|s| !s.is_empty());
     let (tx, _rx) = broadcast::channel::<String>(256);
     let state = AppState {
