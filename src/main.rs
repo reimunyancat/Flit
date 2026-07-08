@@ -258,9 +258,10 @@ async fn events(State(state): State<AppState>) -> impl IntoResponse {
 }
 
 async fn auth(State(state): State<AppState>, req: Request, next: Next) -> Response {
-    let Some(expected) = state.token.clone() else {
+    if state.token.is_empty() {
         return next.run(req).await;
-    };
+    }
+    let expected = state.token.clone();
 
     if req.uri().path() == "/health" {
         return next.run(req).await;
