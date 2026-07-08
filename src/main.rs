@@ -34,11 +34,30 @@ struct Item {
 }
 
 #[derive(Clone)]
+struct Share {
+    item_id: String,
+    expires: u64,
+    once: bool,
+}
+
+#[derive(Clone)]
+struct Drop {
+    label: String,
+    expires: u64,
+}
+
+#[derive(Clone)]
 struct AppState {
     items: Arc<Mutex<HashMap<String, Item>>>,
     tx: broadcast::Sender<String>,
+    token: Arc<String>,
     ttl: u64,
-    token: Option<String>,
+    public_url: Arc<Mutex<Option<String>>>,
+    shares: Arc<Mutex<HashMap<String, Share>>>,
+    drops: Arc<Mutex<HashMap<String, Drop>>>,
+    rate: Arc<Mutex<HashMap<String, (u64, u32)>>>,
+    rate_limit: u32,
+    last_active: Arc<Mutex<u64>>,
 }
 
 fn now() -> u64 {
@@ -317,13 +336,30 @@ async fn main() {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(5);
-    let token = std::env::var("FLIT_TOKEN").ok().filter(|s| !s.is_empty());
+    let rate_limit: u32 = std::env::var("FLIT_RATE")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let ephemeral = std::env::var("FLIT_EPHEMERAL")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    let idle_secs: u64 = std::env::var("FLIT_IDLE_SECS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let token = std::env::var("FLIT_TOKEN").unwrap_or_default();
     let (tx, _rx) = broadcast::channel::<String>(256);
     let state = AppState {
         items: Arc::new(Mutex::new(HashMap::new())),
         tx,
+        token: Arc::new(token),
         ttl,
-        token,
+        public_url: Arc::new(Mutex::new(None)),
+        shares: Arc::new(Mutex::new(HashMap::new())),
+        drops: Arc::new(Mutex::new(HashMap::new())),
+        rate: Arc::new(Mutex::new(HashMap::new())),
+        rate_limit,
+        last_active: Arc::new(Mutex::new(now())),
     };
     spawn_reaper(state.clone());
 

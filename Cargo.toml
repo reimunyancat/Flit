@@ -1,6 +1,6 @@
 [package]
 name = "flit-server"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "Frictionless cross-device drop inbox"
 license = "MIT"
@@ -16,3 +16,4 @@ tokio-stream = { version= "0.1", features = ["sync"]}
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["v4"] }
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
