@@ -325,6 +325,20 @@ document.getElementById("clear").onclick = async () => {
 document.getElementById("lang").onclick = () =>
   setLang(LANG === "ko" ? "en" : "ko");
 
+document.getElementById("pair").onclick = async () => {
+  let base = location.origin;
+  try {
+    const r = await fetch("/api/info");
+    if (r.ok) {
+      const j = await r.json();
+      if (j.url) base = j.url;
+    }
+  } catch (e) {}
+  document.getElementById("qrimg").src = "/qr";
+  document.getElementById("pairurl").textContent = base + "/";
+  document.getElementById("modal").classList.add("show");
+};
+
 const autocopyEl = document.getElementById("autocopy");
 autocopyEl.checked = localStorage.getItem("flit_autocopy") !== "0";
 autocopyEl.addEventListener("change", () => {

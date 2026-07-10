@@ -28,6 +28,7 @@
       <button class="secondary" id="clear" data-i18n="clear">
         전체 지우기
       </button>
+      <button class="secondary" id="pair">QR</button>
       <span id="status" data-i18n="connecting">연결 중...</span>
       <button class="secondary" id="lang">EN</button>
     </header>
@@ -48,6 +49,22 @@
       </div>
       <div id="list"></div>
     </main>
+    <div class="modal" id="modal">
+      <div class="modal-box">
+        <div style="font-weight: 600; margin-bottom: 10px">
+          다른 기기에서 스캔
+        </div>
+        <img id="qrimg" alt="pairing QR" />
+        <code id="pairurl"></code>
+        <br />
+        <button
+          class="secondary"
+          onclick="document.getElementById('modal').classList.remove('show')"
+        >
+          닫기
+        </button>
+      </div>
+    </div>
     <div class="toast" id="toast"></div>
     <div class="dropzone" id="dropzone">
       <span data-i18n="dropHere">여기에 놓으세요</span>
