@@ -2,13 +2,13 @@ use axum::response::Html;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::{
     Json, Router,
-    extract::{DefaultBodyLimit, Multipart, Path, Request, State},
+    extract::{DefaultBodyLimit, Multipart, Path, Query, Request, State},
     http::{HeaderMap, StatusCode, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{delete, get, post},
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -257,65 +257,49 @@ async fn events(State(state): State<AppState>) -> impl IntoResponse {
     Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
-async fn auth(State(state): State<AppState>, req: Request, next: Next) -> Response {
+#[derive(Deserialize)]
+struct TokenQuery {
+    token: Option<String>,
+}
+
+fn cookie_token(headers: &HeaderMap) -> Option<String> {
+    let raw = headers.get(header::COOKIE)?.to_str().ok()?;
+    for part in raw.split(';') {
+        if let Some(v) = part.trim().strip_prefix("flit_token=") {
+            return Some(v.to_string());
+        }
+    }
+    None
+}
+
+async fn auth(
+    State(state): State<AppState>,
+    Query(q): Query<TokenQuery>,
+    headers: HeaderMap,
+    req: Request,
+    next: Next,
+) -> Response {
     if state.token.is_empty() {
         return next.run(req).await;
     }
-    let expected = state.token.clone();
-
-    if req.uri().path() == "/health" {
-        return next.run(req).await;
-    }
-
-    let headers = req.headers();
-    let mut provided: Option<String> = None;
-    let mut from_query = false;
-
-    if let Some(v) = headers
+    let bearer = headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
-    {
-        if let Some(t) = v.strip_prefix("Bearer ") {
-            provided = Some(t.trim().to_string());
-        }
+        .and_then(|s| s.strip_prefix("Bearer "))
+        .map(|s| s.trim().to_string());
+    let legacy = headers
+        .get("x-flit-token")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+    let candidate = bearer
+        .or(legacy)
+        .or(q.token)
+        .or_else(|| cookie_token(&headers));
+    if candidate.as_deref() == Some(state.token.as_str()) {
+        next.run(req).await
+    } else {
+        (StatusCode::UNAUTHORIZED, "unauthorized").into_response()
     }
-
-    if provided.is_none() {
-        if let Some(q) = req.uri().query() {
-            for pair in q.split('&') {
-                if let Some(t) = pair.strip_prefix("token=") {
-                    provided = Some(t.to_string());
-                    from_query = true;
-                    break;
-                }
-            }
-        }
-    }
-
-    if provided.is_none() {
-        if let Some(c) = headers.get(header::COOKIE).and_then(|v| v.to_str().ok()) {
-            for pair in c.split(';') {
-                if let Some(t) = pair.trim().strip_prefix("flit_token=") {
-                    provided = Some(t.to_string());
-                    break;
-                }
-            }
-        }
-    }
-
-    if provided.as_deref() != Some(expected.as_str()) {
-        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
-    }
-
-    let mut res = next.run(req).await;
-
-    if from_query {
-        if let Ok(v) = format!("flit_token={expected}; Path=/; HttpOnly; SameSite=Lax").parse() {
-            res.headers_mut().insert(header::SET_COOKIE, v);
-        }
-    }
-
-    res
 }
 
 #[tokio::main]
@@ -364,19 +348,22 @@ async fn main() {
     };
     spawn_reaper(state.clone());
 
-    let app = Router::new()
-        .route("/", get(index))
-        .route("/app.js", get(app_js))
-        .route("/style.css", get(styles))
-        .route("/health", get(health))
-        .route("/icon.svg", get(icon))
+    let api = Router::new()
         .route("/api/text", post(post_text))
         .route("/api/file", post(post_file))
         .route("/api/items", get(list_items).delete(clear_items))
         .route("/api/items/{id}/raw", get(get_raw))
         .route("/api/items/{id}", delete(delete_item))
         .route("/api/events", get(events))
-        .route_layer(middleware::from_fn_with_state(state.clone(), auth))
+        .route_layer(middleware::from_fn_with_state(state.clone(), auth));
+
+    let app = Router::new()
+        .route("/", get(index))
+        .route("/health", get(health))
+        .route("/app.js", get(app_js))
+        .route("/style.css", get(styles))
+        .route("/icon.svg", get(icon))
+        .merge(api)
         .layer(DefaultBodyLimit::max(max_mb * 1024 * 1024))
         .with_state(state);
 
