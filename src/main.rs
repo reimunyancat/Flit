@@ -1,5 +1,6 @@
 use axum::response::Html;
 use axum::response::sse::{Event, KeepAlive, Sse};
+use axum::routing::head;
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, Multipart, Path, Query, Request, State},
@@ -8,8 +9,11 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{delete, get, post},
 };
+use qrcode::QrCode;
+use qrcode::render::svg;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt::format;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -302,6 +306,92 @@ async fn auth(
     }
 }
 
+fn host_base(state: &AppState, headers: &HeaderMap) -> String {
+    if let Some(u) = state.public_url.lock().unwrap().clone() {
+        return u;
+    }
+    let host = headers
+        .get(header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("localhost:7777");
+    let proto = headers
+        .get("x-forwarded-proto")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.split(',').next())
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("http");
+    format!("{proto}://{host}")
+}
+
+async fn info(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    let public = state.public_url.lock().unwrap().clone();
+    let base = host_base(&state, &headers);
+    Json(serde_json::json!({ "url": base, "tunnel": public.is_some()})).into_response()
+}
+
+async fn pairing_qr(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    let base = host_base(&state, &headers);
+    let url = if state.token.is_empty() {
+        format!("{base}/")
+    } else {
+        format!("{base}/?token={}", state.token)
+    };
+    match QrCode::new(url.as_bytes()) {
+        Ok(code) => {
+            let image = code.render::<svg::Color>().min_dimensions(220, 220).build();
+            let mut h = HeaderMap::new();
+            h.insert(
+                header::CONTENT_TYPE,
+                header::HeaderValue::from_static("image/svg+xml"),
+            );
+            (h, image).into_response()
+        }
+        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "qr error").into_response(),
+    }
+}
+
+fn spawn_tunnel(state: AppState, port: u16) {
+    tokio::spawn(async move {
+        use tokio::io::{AsyncBufReadExt, BufReader};
+        use tokio::process::Command;
+        let mut child = match Command::new("cloudflared")
+            .arg("tunnel")
+            .arg("--url")
+            .arg(format!("http://127.0.0.1:{port}"))
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+        {
+            Ok(c) => c,
+            Err(_) => {
+                eprintln!("flit: FLIT_TUNNEL set but `cloudflared` was not found in PATH");
+                return;
+            }
+        };
+        if let Some(err) = child.stderr.take() {
+            let mut lines = BufReader::new(err).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                if let Some(idx) = line.find("https://") {
+                    let candidate = line[idx..]
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or("")
+                        .trim_end_matches('|')
+                        .to_string();
+                    if candidate.contains("trycloudflare.com")
+                        || candidate.contains("cfargotunnel.com")
+                    {
+                        println!("flit: public URL -> {candidate}");
+                        *state.public_url.lock().unwrap() = Some(candidate);
+                    }
+                }
+            }
+        }
+        let _ = child.wait().await;
+    });
+}
+
 #[tokio::main]
 async fn main() {
     let addr: SocketAddr = match std::env::var("PORT") {
@@ -317,6 +407,9 @@ async fn main() {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(600);
+    let tunnel = std::env::var("FLIT_TUNNEL")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
     let max_mb: usize = std::env::var("FLIT_MAX_MB")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -347,6 +440,9 @@ async fn main() {
         last_active: Arc::new(Mutex::new(now())),
     };
     spawn_reaper(state.clone());
+    if tunnel {
+        spawn_tunnel(state.clone(), addr.port());
+    }
 
     let api = Router::new()
         .route("/api/text", post(post_text))
@@ -355,6 +451,8 @@ async fn main() {
         .route("/api/items/{id}/raw", get(get_raw))
         .route("/api/items/{id}", delete(delete_item))
         .route("/api/events", get(events))
+        .route("/qr", get(pairing_qr))
+        .route("/api/info", get(info))
         .route_layer(middleware::from_fn_with_state(state.clone(), auth));
 
     let app = Router::new()
