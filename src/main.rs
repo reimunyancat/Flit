@@ -464,6 +464,174 @@ async fn serve_share(State(state): State<AppState>, Path(sid): Path<String>) -> 
     }
 }
 
+fn want_lang(headers: &HeaderMap) -> &'static str {
+    let al = headers
+        .get(header::ACCEPT_LANGUAGE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let first = al
+        .split(',')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    if first.starts_with("ko") { "ko" } else { "en" }
+}
+
+#[derive(Deserialize)]
+struct DropReq {
+    label: Option<String>,
+    ttl: Option<u64>,
+}
+
+async fn create_drop(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<DropReq>,
+) -> Response {
+    let did = Uuid::new_v4().simple().to_string();
+    let ttl = req.ttl.unwrap_or(0);
+    let drop = Drop {
+        label: req.label.unwrap_or_else(|| "guest".into()),
+        expires: if ttl == 0 { 0 } else { now() + ttl },
+    };
+    state.drops.lock().unwrap().insert(did.clone(), drop);
+    let base = host_base(&state, &headers);
+    Json(serde_json::json!({"id":did, "url": format!("{base}/d/{did}")})).into_response()
+}
+
+fn valid_drop(state: &AppState, did: &str) -> Option<Drop> {
+    let d = state.drops.lock().unwrap().get(did).cloned()?;
+    if d.expires != 0 && d.expires < now() {
+        state.drops.lock().unwrap().remove(did);
+        return None;
+    }
+    Some(d)
+}
+
+async fn drop_page(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(did): Path<String>,
+) -> Response {
+    match valid_drop(&state, &did) {
+        Some(_) => {
+            let (lang, title, note, ph, btn) = if want_lang(&headers) == "ko" {
+                (
+                    "ko",
+                    "Flit 받기함",
+                    "여기 올리면 상대방 인박스로만 전달됩니다. 인박스 내용은 안 보여요.",
+                    "텍스트나 링크...",
+                    "보내기",
+                )
+            } else {
+                (
+                    "en",
+                    "Flit drop",
+                    "Anything you send here lands only in their inbox - you can't see the inbox itself.",
+                    "Text or a link...",
+                    "send",
+                )
+            };
+            let p = format!(
+                "<!doctype html><html lang='{lang}'><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Flit</title><body style='font:15px system-ui;max-width:560px;margin:40px auto;padding 0 16px'><h2><img src='/icon.svg' width='24' height='24' sytle='vertical-align:-5px;margin-right:6px'/>{title}</h2><p style=opacity:.6'>{note}</p><form method=post enctype='multipart/form-data'><textarea name=text placeholder='{ph}' style='width:100%;min-height:90px;padding:10px;border:1px solid #8888;border-radius:10px;background:transparent'></textarea><br><br><input type=file name=file><br><br><button style='padding:10px 16px;border:0,border-radius:9px;background:#2dd672;font-weight:600'>{btn}</button></form></body></html>"
+            );
+            Html(p).into_response()
+        }
+        None => (StatusCode::NOT_FOUND, "expired or missing").into_response(),
+    }
+}
+
+async fn drop_upload(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(did): Path<String>,
+    mut multipart: Multipart,
+) -> Response {
+    let drop = match valid_drop(&state, &did) {
+        Some(d) => d,
+        None => return (StatusCode::NOT_FOUND, "expired").into_response(),
+    };
+    let mut count = 0;
+    while let Ok(Some(field)) = multipart.next_field().await {
+        let field_name = field.name().map(|s| s.to_string());
+        let file_name = field
+            .file_name()
+            .map(|s| s.to_string())
+            .filter(|s| !s.is_empty());
+        let ctype = field
+            .content_type()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "application/octet-stream".into());
+        if let Some(name) = file_name {
+            let data = match field.bytes().await {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+            if data.is_empty() {
+                continue;
+            }
+            let created = now();
+            let item = Item {
+                id: Uuid::new_v4().to_string(),
+                kind: "file".into(),
+                name: format!("[{}] {}", drop.label, name),
+                size: data.len(),
+                text: None,
+                created,
+                expires: if state.ttl == 0 {
+                    0
+                } else {
+                    created + state.ttl
+                },
+                bytes: data.to_vec(),
+                content_type: ctype,
+            };
+            store(&state, item);
+            count += 1;
+        } else if field_name.as_deref() == Some("text") {
+            let data = match field.text().await {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            if data.trim().is_empty() {
+                continue;
+            }
+            let created = now();
+            let kind = if is_url(&data) { "link" } else { "text" };
+            let label: String = data.lines().next().unwrap_or("").chars().take(60).collect();
+            let item = Item {
+                id: Uuid::new_v4().to_string(),
+                kind: kind.to_string(),
+                name: format!("[{}] {}", drop.label, label),
+                size: data.len(),
+                text: Some(data.clone()),
+                created,
+                expires: if state.ttl == 0 {
+                    0
+                } else {
+                    created + state.ttl
+                },
+                bytes: data.into_bytes(),
+                content_type: "text/plain; charset=utf-8".into(),
+            };
+            store(&state, item);
+            count += 1;
+        } else {
+            let _ = field.bytes().await;
+        }
+    }
+    if count == 0 {
+        return (StatusCode::BAD_REQUEST, "nothing uploaded").into_response();
+    }
+    let (msg, again) = if want_lang(&headers) == "ko" {
+        ("전송 완료! 받는 사람 인박스에 도착했어요.", "또 보내기")
+    } else {
+        ("Sent! It's in their inbox now.", "Send another")
+    };
+    Html(format!("<!doctype html><meta charset=utf-8><body style='font:16px system-ui;text-align:center;margin-top:60px'>{msg}<br><br><a href=''>{again}</a></body>")).into_response()
+}
+
 #[tokio::main]
 async fn main() {
     let addr: SocketAddr = match std::env::var("PORT") {
@@ -526,6 +694,7 @@ async fn main() {
         .route("/qr", get(pairing_qr))
         .route("/api/info", get(info))
         .route("/api/items/{id}/share", post(create_share))
+        .route("/api/drops", post(create_drop))
         .route_layer(middleware::from_fn_with_state(state.clone(), auth));
 
     let app = Router::new()
@@ -535,6 +704,7 @@ async fn main() {
         .route("/style.css", get(styles))
         .route("/icon.svg", get(icon))
         .route("/s/{share_id}", get(serve_share))
+        .route("/d/{drop_id}", get(drop_page).post(drop_upload))
         .merge(api)
         .layer(DefaultBodyLimit::max(max_mb * 1024 * 1024))
         .with_state(state);
