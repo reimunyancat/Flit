@@ -1,4 +1,3 @@
-use axum::response::Html;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::routing::head;
 use axum::{
@@ -6,7 +5,7 @@ use axum::{
     extract::{DefaultBodyLimit, Multipart, Path, Query, Request, State},
     http::{HeaderMap, StatusCode, header},
     middleware::{self, Next},
-    response::{IntoResponse, Response},
+    response::{Html, IntoResponse, Redirect, Response},
     routing::{delete, get, post},
 };
 use qrcode::QrCode;
@@ -632,6 +631,126 @@ async fn drop_upload(
     Html(format!("<!doctype html><meta charset=utf-8><body style='font:16px system-ui;text-align:center;margin-top:60px'>{msg}<br><br><a href=''>{again}</a></body>")).into_response()
 }
 
+async fn manifest() -> Response {
+    let m = serde_json::json!({
+        "name": "Flit",
+        "short_name": "Flit",
+        "start_url": "/",
+        "scope": "/",
+        "display": "standalone",
+        "background_color": "#111111",
+        "theme_color": "#2dd672",
+        "icons": [{"src":"/icon.svg", "sizes":"any", "type":"image/svg+xml", "purpose": "any maskable"}],
+        "share_target": {
+            "action": "/share-target",
+            "method": "POST",
+            "enctype": "multipart/form-data",
+            "params": {"title":"title","text": "text", "url":"url","files":[{"name":"file","accept":["*/*"]}]}
+        }
+    });
+    let mut h = HeaderMap::new();
+    h.insert(
+        header::CONTENT_TYPE,
+        header::HeaderValue::from_static("application/manifest+json"),
+    );
+    (h, m.to_string()).into_response()
+}
+
+async fn service_worker() -> Response {
+    let js = r#"const C='flit-v2';const P=['/','/app.js','/style.css','/icon.svg'];self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.addAll(P)));});self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;const u=new URL(e.request.url);if(P.includes(u.pathname)){e.respondWith(fetch(e.request).then(r=>{const cp=r.clone();caches.open(C).then(c=>c.put(e.request,cp));return r;}).catch(()=>caches.match(e.request)));}});"#;
+    let mut h = HeaderMap::new();
+    h.insert(
+        header::CONTENT_TYPE,
+        header::HeaderValue::from_static("application/javascript"),
+    );
+    (h, js).into_response()
+}
+
+async fn share_target(State(state): State<AppState>, mut multipart: Multipart) -> Response {
+    let mut texts: Vec<String> = Vec::new();
+    while let Ok(Some(field)) = multipart.next_field().await {
+        let field_name = field.name().map(|s| s.to_string());
+        let file_name = field
+            .file_name()
+            .map(|s| s.to_string())
+            .filter(|s| !s.is_empty());
+        let ctype = field
+            .content_type()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "application/octet-stream".into());
+        if let Some(name) = field_name {
+            let data = match field.bytes().await {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+            if data.is_empty() {
+                continue;
+            }
+            let created = now();
+            let item = Item {
+                id: Uuid::new_v4().to_string(),
+                kind: "file".into(),
+                name,
+                size: data.len(),
+                text: None,
+                created,
+                expires: if state.ttl == 0 {
+                    0
+                } else {
+                    created + state.ttl
+                },
+                bytes: data.to_vec(),
+                content_type: ctype,
+            };
+            store(&state, item);
+        } else if matches!(
+            field_name.as_deref(),
+            Some("text") | Some("url") | Some("title")
+        ) {
+            if let Ok(t) = field.text().await {
+                if !t.trim().is_empty() {
+                    texts.push(t);
+                }
+            }
+        } else {
+            let _ = field.bytes().await;
+        }
+    }
+    let joined = texts.join(" ").trim().to_string();
+    if !joined.is_empty() {
+        let created = now();
+        let kind = if is_url(&joined) { "link" } else { "text" };
+        let label: String = joined
+            .lines()
+            .next()
+            .unwrap_or("")
+            .chars()
+            .take(80)
+            .collect();
+        let item = Item {
+            id: Uuid::new_v4().to_string(),
+            kind: kind.to_string(),
+            name: if label.trim().is_empty() {
+                "shared".into()
+            } else {
+                label
+            },
+            size: joined.len(),
+            text: Some(joined.clone()),
+            created,
+            expires: if state.ttl == 0 {
+                0
+            } else {
+                created + state.ttl
+            },
+            bytes: joined.into_bytes(),
+            content_type: "text/plain; charset=utf-8".into(),
+        };
+        store(&state, item);
+    }
+    Redirect::to("/").into_response()
+}
+
 #[tokio::main]
 async fn main() {
     let addr: SocketAddr = match std::env::var("PORT") {
@@ -702,9 +821,12 @@ async fn main() {
         .route("/health", get(health))
         .route("/app.js", get(app_js))
         .route("/style.css", get(styles))
-        .route("/icon.svg", get(icon))
         .route("/s/{share_id}", get(serve_share))
         .route("/d/{drop_id}", get(drop_page).post(drop_upload))
+        .route("/manifest.webmanifest", get(manifest))
+        .route("/sw.js", get(service_worker))
+        .route("/icon.svg", get(icon))
+        .route("/share-target", post(share_target))
         .merge(api)
         .layer(DefaultBodyLimit::max(max_mb * 1024 * 1024))
         .with_state(state);
