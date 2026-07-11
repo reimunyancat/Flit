@@ -392,6 +392,78 @@ fn spawn_tunnel(state: AppState, port: u16) {
     });
 }
 
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+#[derive(Deserialize)]
+struct ShareReq {
+    once: Option<bool>,
+    ttl: Option<u64>,
+}
+
+async fn create_share(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(req): Json<ShareReq>,
+) -> Response {
+    if !state.items.lock().unwrap().contains_key(&id) {
+        return (StatusCode::NOT_FOUND, "no item").into_response();
+    }
+    let sid = Uuid::new_v4().simple().to_string();
+    let ttl = req.ttl.unwrap_or(0);
+    let share = Share {
+        item_id: id,
+        expires: if ttl == 0 { 0 } else { now() + ttl },
+        once: req.once.unwrap_or(false),
+    };
+    state.shares.lock().unwrap().insert(sid.clone(), share);
+    let base = host_base(&state, &headers);
+    Json(serde_json::json!({ "id":sid, "url": format!("{base}/s/{sid}")})).into_response()
+}
+
+async fn serve_share(State(state): State<AppState>, Path(sid): Path<String>) -> Response {
+    let share = state.shares.lock().unwrap().get(&sid).cloned();
+    let share = match share {
+        Some(s) => s,
+        None => return (StatusCode::NOT_FOUND, "expired or missing").into_response(),
+    };
+    if share.expires != 0 && share.expires < now() {
+        state.shares.lock().unwrap().remove(&sid);
+        return (StatusCode::NOT_FOUND, "expired").into_response();
+    }
+    let item = state.items.lock().unwrap().get(&share.item_id).cloned();
+    let item = match item {
+        Some(i) => i,
+        None => return (StatusCode::NOT_FOUND, "item gone").into_response(),
+    };
+    if share.once {
+        state.shares.lock().unwrap().remove(&sid);
+    }
+    if item.kind == "file" {
+        let mut h = HeaderMap::new();
+        if let Ok(v) = item.content_type.parse() {
+            h.insert(header::CONTENT_TYPE, v);
+        }
+        let safe = item.name.replace('\n', " ");
+        if let Ok(v) = format!("attachment; filename=\"{safe}\"").parse() {
+            h.insert(header::CONTENT_DISPOSITION, v);
+        }
+        (h, item.bytes.clone()).into_response()
+    } else {
+        let esc = html_escape(&item.text.clone().unwrap_or_default());
+        let mut p = String::from(
+            "<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Flit share</title><body style='font:15px system-ui;max-width:680px;margin:40px auto;padding:0 16px'><h3><img src='/icon.svg' width='22' height='22' style='vertical-align:-4px;margin-right:6px'/>Flit</h3><pre style='white-space:pre-wrap;word-break:break-word;background:#80808022;padding:14px;border-radius:10px'>",
+        );
+        p.push_str(&esc);
+        p.push_str("</pre></body>");
+        Html(p).into_response()
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let addr: SocketAddr = match std::env::var("PORT") {
@@ -453,6 +525,7 @@ async fn main() {
         .route("/api/events", get(events))
         .route("/qr", get(pairing_qr))
         .route("/api/info", get(info))
+        .route("/api/items/{id}/share", post(create_share))
         .route_layer(middleware::from_fn_with_state(state.clone(), auth));
 
     let app = Router::new()
@@ -461,6 +534,7 @@ async fn main() {
         .route("/app.js", get(app_js))
         .route("/style.css", get(styles))
         .route("/icon.svg", get(icon))
+        .route("/s/{share_id}", get(serve_share))
         .merge(api)
         .layer(DefaultBodyLimit::max(max_mb * 1024 * 1024))
         .with_state(state);
