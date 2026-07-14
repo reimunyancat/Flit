@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: flit
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    region: singapore
+    plan: free
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: FLIT_TTL_SECS
+        value: "600"
+      - key: FLIT_MAX_MB
+        value: "5"
+      - key: FLIT_RATE
+        value: "60"
+      - key: FLIT_TOKEN
+        sync: false

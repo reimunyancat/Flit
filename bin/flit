@@ -1,62 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
-FLIT_URL="${FLIT_URL:-http://127.0.0.1:7777}"
+BASE="${FLIT_URL:-http://localhost:7777}"
 AUTH=()
-[ -n "${FLIT_TOKEN:-}" ] && AUTH=(-H "Authorization: Bearer $FLIT_TOKEN")
-
-usage() {
-    cat << EOF
-flit — drop anything into your Flit inbox
-
-Usage:
-  flit <text...>     send text
-  flit -f <file>     send a file
-  echo hi | flit     send stdin as text
-  flit -l            list recent items
-EOF
-  exit 1
-}
-
-if [ ! -t 0 ]; then
-    body="$(cat)"
-    [ -z "$body" ] && exit 0
-    curl -fsS "${AUTH[@]}" -X POST "$FLIT_URL/api/text" \
-        -H "Content-Type: text/plain" \
-        --data-binary "$body" >/dev/null
-    echo "sent (text, stdin)"
-    exit 0
-fi
-
-[ $# -eq 0 ] && usage
-
-case "$1" in
-    -l | --list)
-        curl -fsS "${AUTH[@]}" "$FLIT_URL/api/items"
-        echo
-        ;;
-    -f | --file)
-        shift
-        [ $# -eq 0 ] && usage
-        for f in "$@"; do
-            [ -f "$f" ] || {
-                echo "not a file: $f" >&2
-                exit 1
-            }
-            curl -fsS "${AUTH[@]}" -X POST "$FLIT_URL/api/file" -F "file=@$f" >/dev/null
-            echo "sent (file): $f"
-        done
-        ;;
-    -h | --help)
-        usage
-        ;;
-    *)
-        body="$*"
-        curl -fsS "${AUTH[@]}" -X POST "$FLIT_URL/api/text" \
-            -H "Content-Type: text/plain" \
-            --data-binary "$body" >/dev/null
-        echo "sent (text)"
-        ;;
-    esac
-
-
+if [ -n "${FLIT_TOKEN:-}" ]; then AUTH=(-H "X-Flit-Token: ${FLIT_TOKEN}"); fi
+post_text() { curl -fsS "${AUTH[@]}" -H "Content-Type: text/plain" --data-binary "$1" "${BASE}/api/text" >/dev/null && echo "sent text"; }
+post_file() { curl -fsS "${AUTH[@]}" -F "file=@$1" "${BASE}/api/file" >/dev/null && echo "sent $1"; }
+if [ "$#" -eq 0 ]; then PIPED="$(cat)"; [ -n "$PIPED" ] && post_text "$PIPED"; exit 0; fi
+for arg in "$@"; do if [ -f "$arg" ]; then post_file "$arg"; else post_text "$arg"; fi; done

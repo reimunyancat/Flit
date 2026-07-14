@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export FLIT_EPHEMERAL=1
+export FLIT_IDLE_SECS="${FLIT_IDLE_SECS:-1800}"
+export FLIT_ADDR="${FLIT_ADDR:-127.0.0.1:7777}"
+DIR="$(cd "$(dirname "$0")/.." && pwd)"
+if [ -x "$DIR/target/release/flit-server" ]; then exec "$DIR/target/release/flit-server"; else exec cargo run --release --manifest-path "$DIR/Cargo.toml"; fi
