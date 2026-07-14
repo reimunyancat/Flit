@@ -456,10 +456,14 @@ async function makeDrop() {
     body: JSON.stringify({ label: "guest" }),
   });
   if (!r.ok) {
+    toast(tr("drop_fail") + " (" + r.status + ")");
+    return;
+  }
+  const j = await r.json();
+  if (!j || !j.url) {
     toast(tr("drop_fail"));
     return;
   }
-  const j = await r.json;
   await copy(j.url);
   toast(tr("drop_copied"));
 }
