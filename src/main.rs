@@ -1,21 +1,20 @@
-use axum::response::sse::{Event, KeepAlive, Sse};
-use axum::routing::head;
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
 use axum::{
     Json, Router,
-    extract::{DefaultBodyLimit, Multipart, Path, Query, Request, State},
+    extract::{ConnectInfo, DefaultBodyLimit, Multipart, Path, Query, Request, State},
     http::{HeaderMap, StatusCode, header},
     middleware::{self, Next},
+    response::sse::{Event, KeepAlive, Sse},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{delete, get, post},
 };
 use qrcode::QrCode;
 use qrcode::render::svg;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::fmt::format;
-use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
@@ -77,189 +76,6 @@ fn is_url(s: &str) -> bool {
         && (t.starts_with("http://") || t.starts_with("https://"))
 }
 
-fn store(state: &AppState, item: Item) {
-    let id = item.id.clone();
-    state.items.lock().unwrap().insert(id.clone(), item);
-    let _ = state.tx.send(id);
-}
-
-fn spawn_reaper(state: AppState) {
-    if state.ttl == 0 {
-        return;
-    }
-    tokio::spawn(async move {
-        let mut tick = tokio::time::interval(Duration::from_secs(30));
-        loop {
-            tick.tick().await;
-            let t = now();
-            state
-                .items
-                .lock()
-                .unwrap()
-                .retain(|_, it| it.expires == 0 || it.expires > t);
-        }
-    });
-}
-
-async fn icon() -> Response {
-    let svg = include_str!("../static/icon.svg");
-    let mut h = HeaderMap::new();
-    h.insert(
-        header::CONTENT_TYPE,
-        header::HeaderValue::from_static("image/svg+xml"),
-    );
-    (h, svg).into_response()
-}
-
-async fn post_text(State(state): State<AppState>, body: String) -> Response {
-    if body.trim().is_empty() {
-        return (StatusCode::BAD_REQUEST, "empty").into_response();
-    }
-    let kind = if is_url(&body) { "link" } else { "text" };
-    let label: String = body.lines().next().unwrap_or("").chars().take(80).collect();
-    let created = now();
-    let item = Item {
-        id: Uuid::new_v4().to_string(),
-        kind: kind.to_string(),
-        name: if label.trim().is_empty() {
-            "text".into()
-        } else {
-            label
-        },
-        size: body.len(),
-        text: Some(body.clone()),
-        created,
-        expires: if state.ttl == 0 {
-            0
-        } else {
-            created + state.ttl
-        },
-        bytes: body.into_bytes(),
-        content_type: "text/plain; charset=utf-8".into(),
-    };
-    store(&state, item);
-    (StatusCode::CREATED, "ok").into_response()
-}
-
-async fn list_items(State(state): State<AppState>) -> Response {
-    let map = state.items.lock().unwrap();
-    let mut items: Vec<Item> = map.values().cloned().collect();
-    items.sort_by(|a, b| b.created.cmp(&a.created));
-    Json(items).into_response()
-}
-
-async fn health() -> &'static str {
-    "ok"
-}
-
-async fn post_file(State(state): State<AppState>, mut multipart: Multipart) -> Response {
-    let mut count = 0;
-    while let Ok(Some(field)) = multipart.next_field().await {
-        let name = field
-            .file_name()
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| "file".into());
-        let content_type = field
-            .content_type()
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| "application/octet-stream".into());
-        let data = match field.bytes().await {
-            Ok(b) => b,
-            Err(_) => continue,
-        };
-        let created = now();
-        let item = Item {
-            id: Uuid::new_v4().to_string(),
-            kind: "file".into(),
-            name,
-            size: data.len(),
-            text: None,
-            created,
-            expires: if state.ttl == 0 {
-                0
-            } else {
-                created + state.ttl
-            },
-            bytes: data.to_vec(),
-            content_type,
-        };
-        store(&state, item);
-        count += 1;
-    }
-    if count == 0 {
-        return (StatusCode::BAD_REQUEST, "no file field").into_response();
-    }
-    (StatusCode::CREATED, "ok").into_response()
-}
-
-async fn delete_item(State(state): State<AppState>, Path(id): Path<String>) -> Response {
-    let removed = state.items.lock().unwrap().remove(&id).is_some();
-    if removed {
-        let _ = state.tx.send(String::new());
-        StatusCode::NO_CONTENT.into_response()
-    } else {
-        (StatusCode::NOT_FOUND, "not found").into_response()
-    }
-}
-
-async fn clear_items(State(state): State<AppState>) -> Response {
-    state.items.lock().unwrap().clear();
-    let _ = state.tx.send(String::new());
-    StatusCode::NO_CONTENT.into_response()
-}
-
-async fn get_raw(State(state): State<AppState>, Path(id): Path<String>) -> Response {
-    let map = state.items.lock().unwrap();
-    match map.get(&id) {
-        Some(item) => {
-            let mut h = HeaderMap::new();
-            if let Ok(v) = item.content_type.parse() {
-                h.insert(header::CONTENT_TYPE, v);
-            }
-            let safe = item.name.replace('"', "").replace('\n', " ");
-            if let Ok(v) = format!("inline; file_name=\"{safe}\"").parse() {
-                h.insert(header::CONTENT_DISPOSITION, v);
-            }
-            (h, item.bytes.clone()).into_response()
-        }
-        None => (StatusCode::NOT_FOUND, "not found").into_response(),
-    }
-}
-
-async fn index() -> Html<&'static str> {
-    Html(include_str!("../static/index.html"))
-}
-
-async fn app_js() -> Response {
-    let mut h = HeaderMap::new();
-    h.insert(
-        header::CONTENT_TYPE,
-        header::HeaderValue::from_static("application/javascript; charset=utf-8"),
-    );
-    (h, include_str!("../static/app.js")).into_response()
-}
-
-async fn styles() -> Response {
-    let mut h = HeaderMap::new();
-    h.insert(
-        header::CONTENT_TYPE,
-        header::HeaderValue::from_static("text/css; charset=utf-8"),
-    );
-    (h, include_str!("../static/style.css")).into_response()
-}
-
-async fn events(State(state): State<AppState>) -> impl IntoResponse {
-    let rx = state.tx.subscribe();
-    let initial = tokio_stream::once(Ok::<Event, std::convert::Infallible>(
-        Event::default().event("ready").data("ok"),
-    ));
-    let stream = initial.chain(BroadcastStream::new(rx).filter_map(|msg| {
-        msg.ok()
-            .map(|id| Ok::<_, std::convert::Infallible>(Event::default().event("item").data(id)))
-    }));
-    Sse::new(stream).keep_alive(KeepAlive::default())
-}
-
 #[derive(Deserialize)]
 struct TokenQuery {
     token: Option<String>,
@@ -305,6 +121,40 @@ async fn auth(
     }
 }
 
+async fn index() -> Html<&'static str> {
+    Html(include_str!("../static/index.html"))
+}
+async fn health() -> &'static str {
+    "ok"
+}
+
+async fn app_js() -> Response {
+    let mut h = HeaderMap::new();
+    h.insert(
+        header::CONTENT_TYPE,
+        header::HeaderValue::from_static("application/javascript; charset=utf-8"),
+    );
+    (h, include_str!("../static/app.js")).into_response()
+}
+
+async fn style_css() -> Response {
+    let mut h = HeaderMap::new();
+    h.insert(
+        header::CONTENT_TYPE,
+        header::HeaderValue::from_static("text/css; charset=utf-8"),
+    );
+    (h, include_str!("../static/style.css")).into_response()
+}
+
+async fn icon() -> Response {
+    let mut h = HeaderMap::new();
+    h.insert(
+        header::CONTENT_TYPE,
+        header::HeaderValue::from_static("image/svg+xml"),
+    );
+    (h, include_str!("../static/icon.svg")).into_response()
+}
+
 fn host_base(state: &AppState, headers: &HeaderMap) -> String {
     if let Some(u) = state.public_url.lock().unwrap().clone() {
         return u;
@@ -326,7 +176,7 @@ fn host_base(state: &AppState, headers: &HeaderMap) -> String {
 async fn info(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let public = state.public_url.lock().unwrap().clone();
     let base = host_base(&state, &headers);
-    Json(serde_json::json!({ "url": base, "tunnel": public.is_some()})).into_response()
+    Json(serde_json::json!({ "url": base, "tunnel": public.is_some() })).into_response()
 }
 
 async fn pairing_qr(State(state): State<AppState>, headers: HeaderMap) -> Response {
@@ -348,6 +198,153 @@ async fn pairing_qr(State(state): State<AppState>, headers: HeaderMap) -> Respon
         }
         Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "qr error").into_response(),
     }
+}
+
+fn store(state: &AppState, item: Item) {
+    let id = item.id.clone();
+    state.items.lock().unwrap().insert(id.clone(), item);
+    let _ = state.tx.send(id);
+}
+
+async fn post_text(State(state): State<AppState>, body: String) -> Response {
+    if body.trim().is_empty() {
+        return (StatusCode::BAD_REQUEST, "empty").into_response();
+    }
+    let kind = if is_url(&body) { "link" } else { "text" };
+    let label: String = body.lines().next().unwrap_or("").chars().take(80).collect();
+    let created = now();
+    let item = Item {
+        id: Uuid::new_v4().to_string(),
+        kind: kind.to_string(),
+        name: if label.trim().is_empty() {
+            "text".into()
+        } else {
+            label
+        },
+        size: body.len(),
+        text: Some(body.clone()),
+        created,
+        expires: if state.ttl == 0 {
+            0
+        } else {
+            created + state.ttl
+        },
+        bytes: body.into_bytes(),
+        content_type: "text/plain; charset=utf-8".into(),
+    };
+    store(&state, item);
+    (StatusCode::CREATED, "ok").into_response()
+}
+
+async fn post_file(State(state): State<AppState>, mut multipart: Multipart) -> Response {
+    let mut count = 0;
+    while let Ok(Some(field)) = multipart.next_field().await {
+        let name = field
+            .file_name()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "file".into());
+        let content_type = field
+            .content_type()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "application/octet-stream".into());
+        let data = match field.bytes().await {
+            Ok(b) => b,
+            Err(_) => continue,
+        };
+        let created = now();
+        let item = Item {
+            id: Uuid::new_v4().to_string(),
+            kind: "file".into(),
+            name,
+            size: data.len(),
+            text: None,
+            created,
+            expires: if state.ttl == 0 {
+                0
+            } else {
+                created + state.ttl
+            },
+            bytes: data.to_vec(),
+            content_type,
+        };
+        store(&state, item);
+        count += 1;
+    }
+    if count == 0 {
+        return (StatusCode::BAD_REQUEST, "no file field").into_response();
+    }
+    (StatusCode::CREATED, "ok").into_response()
+}
+
+async fn list_items(State(state): State<AppState>) -> Response {
+    let map = state.items.lock().unwrap();
+    let mut items: Vec<Item> = map.values().cloned().collect();
+    items.sort_by(|a, b| b.created.cmp(&a.created));
+    Json(items).into_response()
+}
+
+async fn get_raw(State(state): State<AppState>, Path(id): Path<String>) -> Response {
+    let map = state.items.lock().unwrap();
+    match map.get(&id) {
+        Some(item) => {
+            let mut h = HeaderMap::new();
+            if let Ok(v) = item.content_type.parse() {
+                h.insert(header::CONTENT_TYPE, v);
+            }
+            let safe = item.name.replace('"', "").replace('\n', " ");
+            if let Ok(v) = format!("inline; filename=\"{safe}\"").parse() {
+                h.insert(header::CONTENT_DISPOSITION, v);
+            }
+            (h, item.bytes.clone()).into_response()
+        }
+        None => (StatusCode::NOT_FOUND, "not found").into_response(),
+    }
+}
+
+async fn delete_item(State(state): State<AppState>, Path(id): Path<String>) -> Response {
+    let removed = state.items.lock().unwrap().remove(&id).is_some();
+    if removed {
+        let _ = state.tx.send(String::new());
+        StatusCode::NO_CONTENT.into_response()
+    } else {
+        (StatusCode::NOT_FOUND, "not found").into_response()
+    }
+}
+
+async fn clear_items(State(state): State<AppState>) -> Response {
+    state.items.lock().unwrap().clear();
+    let _ = state.tx.send(String::new());
+    StatusCode::NO_CONTENT.into_response()
+}
+
+async fn events(State(state): State<AppState>) -> impl IntoResponse {
+    let rx = state.tx.subscribe();
+    let live = BroadcastStream::new(rx).filter_map(|msg| {
+        msg.ok()
+            .map(|id| Ok::<_, std::convert::Infallible>(Event::default().event("item").data(id)))
+    });
+    let ready = tokio_stream::once(Ok::<_, std::convert::Infallible>(
+        Event::default().event("ready").data("ok"),
+    ));
+    Sse::new(ready.chain(live)).keep_alive(KeepAlive::default())
+}
+
+fn spawn_reaper(state: AppState) {
+    if state.ttl == 0 {
+        return;
+    }
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(Duration::from_secs(30));
+        loop {
+            tick.tick().await;
+            let t = now();
+            state
+                .items
+                .lock()
+                .unwrap()
+                .retain(|_, it| it.expires == 0 || it.expires > t);
+        }
+    });
 }
 
 fn spawn_tunnel(state: AppState, port: u16) {
@@ -397,6 +394,20 @@ fn html_escape(s: &str) -> String {
         .replace('>', "&gt;")
 }
 
+fn want_lang(headers: &HeaderMap) -> &'static str {
+    let al = headers
+        .get(header::ACCEPT_LANGUAGE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let first = al
+        .split(',')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    if first.starts_with("ko") { "ko" } else { "en" }
+}
+
 #[derive(Deserialize)]
 struct ShareReq {
     once: Option<bool>,
@@ -421,7 +432,7 @@ async fn create_share(
     };
     state.shares.lock().unwrap().insert(sid.clone(), share);
     let base = host_base(&state, &headers);
-    Json(serde_json::json!({ "id":sid, "url": format!("{base}/s/{sid}")})).into_response()
+    Json(serde_json::json!({ "id": sid, "url": format!("{base}/s/{sid}") })).into_response()
 }
 
 async fn serve_share(State(state): State<AppState>, Path(sid): Path<String>) -> Response {
@@ -463,20 +474,6 @@ async fn serve_share(State(state): State<AppState>, Path(sid): Path<String>) -> 
     }
 }
 
-fn want_lang(headers: &HeaderMap) -> &'static str {
-    let al = headers
-        .get(header::ACCEPT_LANGUAGE)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    let first = al
-        .split(',')
-        .next()
-        .unwrap_or("")
-        .trim()
-        .to_ascii_lowercase();
-    if first.starts_with("ko") { "ko" } else { "en" }
-}
-
 #[derive(Deserialize)]
 struct DropReq {
     label: Option<String>,
@@ -496,7 +493,7 @@ async fn create_drop(
     };
     state.drops.lock().unwrap().insert(did.clone(), drop);
     let base = host_base(&state, &headers);
-    Json(serde_json::json!({"id":did, "url": format!("{base}/d/{did}")})).into_response()
+    Json(serde_json::json!({ "id": did, "url": format!("{base}/d/{did}") })).into_response()
 }
 
 fn valid_drop(state: &AppState, did: &str) -> Option<Drop> {
@@ -520,20 +517,20 @@ async fn drop_page(
                     "ko",
                     "Flit 받기함",
                     "여기 올리면 상대방 인박스로만 전달됩니다. 인박스 내용은 안 보여요.",
-                    "텍스트나 링크...",
+                    "텍스트나 링크…",
                     "보내기",
                 )
             } else {
                 (
                     "en",
                     "Flit drop",
-                    "Anything you send here lands only in their inbox - you can't see the inbox itself.",
-                    "Text or a link...",
-                    "send",
+                    "Anything you send here lands only in their inbox — you can't see the inbox itself.",
+                    "Text or a link…",
+                    "Send",
                 )
             };
             let p = format!(
-                "<!doctype html><html lang='{lang}'><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Flit</title><body style='font:15px system-ui;max-width:560px;margin:40px auto;padding 0 16px'><h2><img src='/icon.svg' width='24' height='24' sytle='vertical-align:-5px;margin-right:6px'/>{title}</h2><p style=opacity:.6'>{note}</p><form method=post enctype='multipart/form-data'><textarea name=text placeholder='{ph}' style='width:100%;min-height:90px;padding:10px;border:1px solid #8888;border-radius:10px;background:transparent'></textarea><br><br><input type=file name=file><br><br><button style='padding:10px 16px;border:0,border-radius:9px;background:#2dd672;font-weight:600'>{btn}</button></form></body></html>"
+                "<!doctype html><html lang='{lang}'><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Flit</title><body style='font:15px system-ui;max-width:560px;margin:40px auto;padding:0 16px'><h2><img src='/icon.svg' width='24' height='24' style='vertical-align:-5px;margin-right:6px'/>{title}</h2><p style='opacity:.6'>{note}</p><form method=post enctype='multipart/form-data'><textarea name=text placeholder='{ph}' style='width:100%;min-height:90px;padding:10px;border:1px solid #8888;border-radius:10px;background:transparent'></textarea><br><br><input type=file name=file><br><br><button style='padding:10px 16px;border:0;border-radius:9px;background:#2dd672;font-weight:600'>{btn}</button></form></body></html>"
             );
             Html(p).into_response()
         }
@@ -624,9 +621,9 @@ async fn drop_upload(
         return (StatusCode::BAD_REQUEST, "nothing uploaded").into_response();
     }
     let (msg, again) = if want_lang(&headers) == "ko" {
-        ("전송 완료! 받는 사람 인박스에 도착했어요.", "또 보내기")
+        ("✅ 전송 완료! 받는 사람 인박스에 도착했어요.", "또 보내기")
     } else {
-        ("Sent! It's in their inbox now.", "Send another")
+        ("✅ Sent! It's in their inbox now.", "Send another")
     };
     Html(format!("<!doctype html><meta charset=utf-8><body style='font:16px system-ui;text-align:center;margin-top:60px'>{msg}<br><br><a href=''>{again}</a></body>")).into_response()
 }
@@ -640,12 +637,12 @@ async fn manifest() -> Response {
         "display": "standalone",
         "background_color": "#111111",
         "theme_color": "#2dd672",
-        "icons": [{"src":"/icon.svg", "sizes":"any", "type":"image/svg+xml", "purpose": "any maskable"}],
+        "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }],
         "share_target": {
             "action": "/share-target",
             "method": "POST",
             "enctype": "multipart/form-data",
-            "params": {"title":"title","text": "text", "url":"url","files":[{"name":"file","accept":["*/*"]}]}
+            "params": { "title": "title", "text": "text", "url": "url", "files": [{ "name": "file", "accept": ["*/*"] }] }
         }
     });
     let mut h = HeaderMap::new();
@@ -678,7 +675,7 @@ async fn share_target(State(state): State<AppState>, mut multipart: Multipart) -
             .content_type()
             .map(|s| s.to_string())
             .unwrap_or_else(|| "application/octet-stream".into());
-        if let Some(name) = field_name {
+        if let Some(name) = file_name {
             let data = match field.bytes().await {
                 Ok(b) => b,
                 Err(_) => continue,
@@ -751,17 +748,90 @@ async fn share_target(State(state): State<AppState>, mut multipart: Multipart) -
     Redirect::to("/").into_response()
 }
 
+async fn rate_guard(
+    State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    req: Request,
+    next: Next,
+) -> Response {
+    *state.last_active.lock().unwrap() = now();
+    if state.rate_limit == 0 {
+        return next.run(req).await;
+    }
+    let ip = headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.split(',').next())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| addr.ip().to_string());
+    let t = now();
+    let over = {
+        let mut map = state.rate.lock().unwrap();
+        let e = map.entry(ip).or_insert((t, 0));
+        if t - e.0 >= 60 {
+            e.0 = t;
+            e.1 = 0;
+        }
+        e.1 += 1;
+        e.1 > state.rate_limit
+    };
+    if over {
+        return (StatusCode::TOO_MANY_REQUESTS, "rate limited").into_response();
+    }
+    next.run(req).await
+}
+
+fn open_browser(url: &str) {
+    #[cfg(target_os = "macos")]
+    let _ = std::process::Command::new("open").arg(url).spawn();
+    #[cfg(target_os = "windows")]
+    let _ = std::process::Command::new("cmd")
+        .args(["/C", "start", "", url])
+        .spawn();
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+}
+
+async fn shutdown_signal(state: AppState, ephemeral: bool, idle: u64) {
+    let ctrl_c = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+    if ephemeral && idle > 0 {
+        let watch = async move {
+            let mut tick = tokio::time::interval(Duration::from_secs(5));
+            loop {
+                tick.tick().await;
+                let last = *state.last_active.lock().unwrap();
+                if now().saturating_sub(last) >= idle {
+                    println!("flit: idle {idle}s, shutting down");
+                    break;
+                }
+            }
+        };
+        tokio::select! { _ = ctrl_c => {}, _ = watch => {} }
+    } else {
+        ctrl_c.await;
+    }
+    tokio::spawn(async {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        std::process::exit(0);
+    });
+}
+
 #[tokio::main]
 async fn main() {
-    let addr: SocketAddr = match std::env::var("PORT") {
-        Ok(p) => format!("0.0.0.0:{p}")
-            .parse()
-            .expect("PORT must be a valid port number"),
-        Err(_) => std::env::var("FLIT_ADDR")
+    let addr: SocketAddr = match std::env::var("PORT")
+        .ok()
+        .and_then(|p| p.parse::<u16>().ok())
+    {
+        Some(port) => SocketAddr::from(([0, 0, 0, 0], port)),
+        None => std::env::var("FLIT_ADDR")
             .unwrap_or_else(|_| "0.0.0.0:7777".into())
             .parse()
             .expect("FLIT_ADDR must be host:port"),
     };
+    let token = std::env::var("FLIT_TOKEN").unwrap_or_default();
     let ttl: u64 = std::env::var("FLIT_TTL_SECS")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -773,6 +843,7 @@ async fn main() {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(5);
+    let max_bytes = max_mb.saturating_mul(1024 * 1024);
     let rate_limit: u32 = std::env::var("FLIT_RATE")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -784,7 +855,6 @@ async fn main() {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
-    let token = std::env::var("FLIT_TOKEN").unwrap_or_default();
     let (tx, _rx) = broadcast::channel::<String>(256);
     let state = AppState {
         items: Arc::new(Mutex::new(HashMap::new())),
@@ -802,7 +872,6 @@ async fn main() {
     if tunnel {
         spawn_tunnel(state.clone(), addr.port());
     }
-
     let api = Router::new()
         .route("/api/text", post(post_text))
         .route("/api/file", post(post_file))
@@ -815,12 +884,11 @@ async fn main() {
         .route("/api/items/{id}/share", post(create_share))
         .route("/api/drops", post(create_drop))
         .route_layer(middleware::from_fn_with_state(state.clone(), auth));
-
     let app = Router::new()
         .route("/", get(index))
         .route("/health", get(health))
         .route("/app.js", get(app_js))
-        .route("/style.css", get(styles))
+        .route("/style.css", get(style_css))
         .route("/s/{share_id}", get(serve_share))
         .route("/d/{drop_id}", get(drop_page).post(drop_upload))
         .route("/manifest.webmanifest", get(manifest))
@@ -828,10 +896,25 @@ async fn main() {
         .route("/icon.svg", get(icon))
         .route("/share-target", post(share_target))
         .merge(api)
-        .layer(DefaultBodyLimit::max(max_mb * 1024 * 1024))
-        .with_state(state);
-
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    println!("flit server listening on {addr}");
-    axum::serve(listener, app).await.unwrap();
+        .layer(DefaultBodyLimit::max(max_bytes))
+        .layer(middleware::from_fn_with_state(state.clone(), rate_guard))
+        .with_state(state.clone());
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .expect("failed to bind FLIT_ADDR");
+    println!("flit: listening on http://{addr} (ttl {ttl}s, max {max_mb} MB)");
+    if ephemeral {
+        let mut url = String::from("http://127.0.0.1:");
+        url.push_str(&addr.port().to_string());
+        url.push('/');
+        println!("flit: ephemeral mode -> {url}");
+        open_browser(&url);
+    }
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal(state.clone(), ephemeral, idle_secs))
+    .await
+    .unwrap();
 }
