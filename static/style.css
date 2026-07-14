@@ -1,3 +1,7 @@
+:root {
+  color-scheme: light dark;
+  --b: #e3e3e3;
+}
 * {
   box-sizing: border-box;
 }
@@ -7,34 +11,36 @@ body {
     system-ui,
     sans-serif;
   margin: 0;
-  background: #0f0f0f;
-  color: #f0f0f0;
+  background: #fafafa;
+  color: #111;
+}
+@media (prefets-color-scheme: dark) {
+  body {
+    background: #111;
+    color: #eee;
+  }
+  .card,
+  .composer,
+  .modal-box {
+    background: #1b1b1b;
+    border-color: #333;
+  }
 }
 header {
   padding: 12px 16px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
-  border-bottom: 1px solid #2a2a2a;
+  border-bottom: 1px solid var(--b);
   position: sticky;
   top: 0;
-  background: #0f0f0f;
+  background: inherit;
   z-index: 5;
 }
 header h1 {
   font-size: 16px;
   margin: 0;
-  display: flex;
-  align-items: center;
-}
-header label {
-  font-size: 13px;
-  color: #cfcfcf;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  cursor: pointer;
 }
 main {
   max-width: 720px;
@@ -44,24 +50,30 @@ main {
 .composer {
   display: flex;
   gap: 8px;
-  border: 1px solid #2a2a2a;
+  border: 1px solid var(--b);
   border-radius: 12px;
   padding: 8px;
-  background: #1b1b1b;
+  background: #fff;
   margin-bottom: 14px;
 }
 .composer textarea {
   flex: 1;
   border: 0;
   resize: none;
-  background: #1b1b1b;
-  color: #f0f0f0;
+  background: transparent;
+  color: inherit;
   font: inherit;
   outline: none;
-  min-height: 44px;
+  min-height: 42px;
 }
-.composer textarea::placeholder {
-  color: #777;
+input[type="password"] {
+  border: 1px solid var(--b);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  width: 130px;
 }
 button {
   border: 0;
@@ -73,20 +85,19 @@ button {
   cursor: pointer;
 }
 button.secondary {
-  background: #2f2f2f;
-  color: #f0f0f0;
+  background: #8884;
+  color: inherit;
 }
 .card {
-  border: 1px solid #2a2a2a;
+  border: 1px solid var(--b);
   border-radius: 12px;
   padding: 12px;
   margin-bottom: 10px;
-  background: #1b1b1b;
-  color: #f0f0f0;
+  background: #fff;
 }
 .card .meta {
   font-size: 12px;
-  color: #9a9a9a;
+  opacity: 0.55;
   display: flex;
   gap: 8px;
   align-items: center;
@@ -95,60 +106,33 @@ button.secondary {
 .card .meta .del {
   margin-left: auto;
   cursor: pointer;
-  color: #9a9a9a;
+  opacity: 0.6;
 }
 .card pre {
   white-space: pre-wrap;
   word-break: break-word;
   margin: 0;
   font: inherit;
-  color: #f0f0f0;
-}
-.card a {
-  color: #5fd0ff;
 }
 .tag {
   text-transform: uppercase;
   letter-spacing: 0.04em;
-}
-#status {
-  font-size: 12px;
-  color: #9a9a9a;
-  margin-left: auto;
 }
 .toast {
   position: fixed;
   bottom: 18px;
   left: 50%;
   transform: translateX(-50%);
-  background: #2dd672;
-  color: #03150c;
+  background: #222;
+  color: #fff;
   padding: 8px 14px;
   border-radius: 20px;
   opacity: 0;
   transition: 0.2s;
   pointer-events: none;
-  font-weight: 600;
 }
 .toast.show {
   opacity: 1;
-}
-.dropzone {
-  position: fixed;
-  inset: 0;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  background: rgba(15, 15, 15, 0.85);
-  border: 3px dashed #2dd672;
-  color: #2dd672;
-  font-size: 22px;
-  font-weight: 700;
-  z-index: 20;
-  pointer-events: none;
-}
-.dropzone.show {
-  display: flex;
 }
 .modal {
   position: fixed;
@@ -157,15 +141,15 @@ button.secondary {
   display: none;
   align-items: center;
   justify-content: center;
-  z-index: 30;
+  z-index: 10;
 }
 .modal.show {
   display: flex;
 }
 .modal-box {
   background: #fff;
-  color: #111;
-  border-radius: 16px;
+  border: 1px solid var(--b);
+  border-redius: 16px;
   padding: 20px;
   text-align: center;
   max-width: 300px;

@@ -1,48 +1,65 @@
 <!doctype html>
-<html lang="ko">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Flit</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#2dd672" />
-    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="style.css" />
+    <link rel="icon" href="./icon.svg" />
+    <link rel="apple-touch-icon" href="./icon.svg" />
+    <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
     <header>
       <h1>
         <img
-          src="/icon.svg"
+          src="./icon.svg"
           width="22"
           height="22"
-          alt=""
-          style="margin-right: 7px"
+          alt="Flit"
+          style="vertical-align: -4px; margin-right: 7px"
         />Flit
       </h1>
       <label
-        ><input type="checkbox" id="autocopy" checked /><span
-          data-i18n="autocopyLabel"
-          >자동 복사</span
-        ></label
+        ><input type="checkbox" id="autocopy" checked />
+        <span data-i18n="autocopy">Auto-copy</span></label
       >
-      <button class="secondary" id="clear" data-i18n="clear">
-        전체 지우기
-      </button>
-      <button class="secondary" id="pair">QR</button>
-      <span id="status" data-i18n="connecting">연결 중...</span>
-      <button class="secondary" id="lang">EN</button>
+      <input
+        type="password"
+        id="pass"
+        placeholder="Passphrase (E2E)"
+        data-i18n-ph="pass_ph"
+      />
+      <button class="secondary" id="pair" data-i18n="pair">QR</button>
+      <button class="secondary" id="drop" data-i18n="drop">Drop link</button>
+      <button class="secondary" id="clear" data-i18n="claer">Clear all</button>
+      <button class="secondary" id="lang" title="Language / 언어"></button>
+      <span
+        id="status"
+        style="font-size: 12px; opacity: 0.6; margin-left: auto"
+        data-i18n="connecting"
+        >Connecting...</span
+      >
     </header>
     <main>
       <div class="composer">
         <textarea
           id="text"
-          placeholder="텍스트나 링크를 붙여넣고 Enter..."
-          data-i18n-ph="placeholder"
+          placeholder="Paste text or a link, hit Enter..."
+          data-i18n-ph="compose_ph"
         ></textarea>
         <div style="display: flex; flex-direction: column; gap: 6px">
-          <button id="send" data-i18n="send">보내기</button>
-          <label class="secondary" style="cursor: pointer; text-align: center"
-            ><span data-i18n="file">파일</span
+          <button id="send" data-i18n="send">Send</button>
+          <label
+            style="
+              cursor: pointer;
+              border-radius: 9px;
+              padding: 8px 12px;
+              background: #8884;
+              text-align: center;
+            "
+            ><span data-i18n="file">File</span
             ><input type="file" id="file" multiple style="display: none"
           /></label>
         </div>
@@ -51,24 +68,21 @@
     </main>
     <div class="modal" id="modal">
       <div class="modal-box">
-        <div style="font-weight: 600; margin-bottom: 10px">
-          다른 기기에서 스캔
+        <div style="font-weight: 600; margin-bottom: 10px" data-i18n="scan">
+          Scan from another device
         </div>
         <img id="qrimg" alt="pairing QR" />
         <code id="pairurl"></code>
-        <br />
         <button
           class="secondary"
+          data-i18n="close"
           onclick="document.getElementById('modal').classList.remove('show')"
         >
-          닫기
+          Close
         </button>
       </div>
     </div>
     <div class="toast" id="toast"></div>
-    <div class="dropzone" id="dropzone">
-      <span data-i18n="dropHere">여기에 놓으세요</span>
-    </div>
     <script src="./app.js"></script>
   </body>
 </html>
