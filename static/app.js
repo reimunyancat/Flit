@@ -255,7 +255,7 @@ async function render(items) {
     del.onclick = () => remove(it.id);
     meta.appendChild(del);
     card.appendChild(meta);
-    if (it.kind === "kind") {
+    if (it.kind === "file") {
       const name = it.name.endsWith(".flitenc")
         ? it.name.slice(0, -8)
         : it.name;
@@ -271,7 +271,7 @@ async function render(items) {
         card.appendChild(im);
       } else if (isPdf(it.name)) {
         const fr = document.createElement("iframe");
-        fr.src = "/api/items" + it.id + "/raw" + qs;
+        fr.src = "/api/items/" + it.id + "/raw" + qs;
         fr.style.width = "100%";
         fr.style.height = "320px";
         fr.style.border = "0";
@@ -345,7 +345,7 @@ async function refreshAndMaybeCopy() {
     const txt = await decText(top);
     if (txt) copy(txt);
   }
-  lastTop.top.id;
+  lastTop = top.id;
 }
 
 async function send() {
@@ -392,7 +392,7 @@ async function sendFiles(files) {
       name = f.name + ".flitenc";
     }
     const fd = new FormData();
-    fd.append("file", blob.name);
+    fd.append("file", blob, name);
     try {
       await uploadXHR(fd, (p) => {
         statusEl.textContent = "⬆ " + name + " " + Math.round(p * 100) + "%";
@@ -423,7 +423,7 @@ async function downloadItem(it) {
     }
   }
   const a = document.createElement("a");
-  a.href - URL.createObjectURL(new Blob([bytes]));
+  a.href = URL.createObjectURL(new Blob([bytes]));
   a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
@@ -436,7 +436,7 @@ async function remove(id) {
 
 async function shareItem(id) {
   const r = await fetch("/api/items/" + id + "/share", {
-    method: POST,
+    method: "POST",
     headers: { ...auth, "Content-Type": "application/json" },
     body: "{}",
   });
@@ -446,7 +446,7 @@ async function shareItem(id) {
   }
   const j = await r.json();
   await copy(j.url);
-  toast(tr("share_copied"));
+  toast(tr("drop_copied"));
 }
 
 async function makeDrop() {
