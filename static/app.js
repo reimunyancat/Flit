@@ -96,11 +96,6 @@ const I18N = {
 let LANG =
   localStorage.getItem("flit_lang") ||
   ((navigator.language || "en").toLowerCase().startsWith("ko") ? "ko" : "en");
-const tr = (k) => (I18N[LANG] && I18N[LANG][k]) || I18N.en[k] || k;
-
-let LANG =
-  localStorage.getItem("flit_lang") ||
-  ((navigator.language || "en").toLowerCase().startsWith("ko") ? "ko" : "en");
 let THEME =
   localStorage.getItem("flit_theme") ||
   (window.matchMedia &&
