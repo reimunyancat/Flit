@@ -9,6 +9,15 @@
     <link rel="icon" href="./icon.svg" />
     <link rel="apple-touch-icon" href="./icon.svg" />
     <link rel="stylesheet" href="./style.css" />
+    <script>
+      document.documentElement.setAttribute(
+        "data-theme",
+        localStorage.getItem("flit_theme") ||
+          (matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light"),
+      );
+    </script>
   </head>
   <body>
     <header>
@@ -35,11 +44,9 @@
       <button class="secondary" id="drop" data-i18n="drop">Drop link</button>
       <button class="secondary" id="clear" data-i18n="claer">Clear all</button>
       <button class="secondary" id="lang" title="Language / 언어"></button>
-      <span
-        id="status"
-        style="font-size: 12px; opacity: 0.6; margin-left: auto"
-        data-i18n="connecting"
-        >Connecting...</span
+      <button class="secondary" id="theme" title="Theme / 테마"></button>
+      <span id="status" style="font-size: 12px; opacity: 0.6; margin-left: auto"
+        >Connecting…</span
       >
     </header>
     <main>

@@ -53,6 +53,8 @@ const I18N = {
     drop_copied: "Drop link copied - send it to them",
     confirm_clear: "Delete everything?",
     pasted: "{n} pasted",
+    theme_dark: "Dark",
+    theme_light: "Light",
   },
   ko: {
     autocopy: "자동복사",
@@ -87,6 +89,8 @@ const I18N = {
     drop_copied: "받기 링크 복사됨 - 상대에게 보내세요",
     confirm_clear: "전체 삭제?",
     pasted: "{n}개 붙여넣기 전송",
+    theme_dark: "다크",
+    theme_light: "라이트",
   },
 };
 let LANG =
@@ -94,18 +98,40 @@ let LANG =
   ((navigator.language || "en").toLowerCase().startsWith("ko") ? "ko" : "en");
 const tr = (k) => (I18N[LANG] && I18N[LANG][k]) || I18N.en[k] || k;
 
+let LANG =
+  localStorage.getItem("flit_lang") ||
+  ((navigator.language || "en").toLowerCase().startsWith("ko") ? "ko" : "en");
+let THEME =
+  localStorage.getItem("flit_theme") ||
+  (window.matchMedia &&
+  window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light");
+let connState = "connecting";
+const tr = (k) => (I18N[LANG] && I18N[LANG][k]) || I18N.en[k] || k;
+function renderStatus() {
+  if (statusEl) statusEl.textContent = tr(connState);
+}
+function applyTheme() {
+  document.documentElement.setAttribute("data-theme", THEME);
+  const tb = document.getElementById("theme");
+  if (tb)
+    tb.textContent = THEME === "dark" ? tr("theme_light") : tr("theme_dark");
+}
 function applyI18n() {
   document.documentElement.lang = LANG;
   const lb = document.getElementById("lang");
-  if (lb) lb.textContent = LANG === "ko" ? "EN" : "한국어";
+  if (lb) lb.textContent = LANG === "ko" ? "English" : "한국어";
   document.querySelectorAll("[data-i18n]").forEach((el) => {
     el.textContent = tr(el.getAttribute("data-i18n"));
   });
   document.querySelectorAll("[data-i18n-ph]").forEach((el) => {
     el.placeholder = tr(el.getAttribute("data-i18n-ph"));
   });
+  applyTheme();
+  renderStatus();
 }
-applyI18n;
+applyI18n();
 
 function toast(m) {
   toastEl.textContent = m;
@@ -507,6 +533,11 @@ document.getElementById("lang").onclick = () => {
   applyI18n();
   load();
 };
+document.getElementById("theme").onclick = () => {
+  THEME = THEME === "dark" ? "light" : "dark";
+  localStorage.setItem("flit_theme", THEME);
+  applyTheme();
+};
 document.getElementById("pair").onclick = async () => {
   let base = location.origin;
   try {
@@ -524,11 +555,13 @@ passEl.addEventListener("change", load);
 function connect() {
   const ev = new EventSource("/api/events" + qs);
   ev.onopen = () => {
-    statusEl.textContent = tr("connected");
+    connState = "connected";
+    renderStatus();
   };
   ev.addEventListener("item", () => refreshAndMaybeCopy());
   ev.onerror = () => {
-    statusEl.textContent = tr("reconnecting");
+    connState = "reconnecting";
+    renderStatus();
   };
 }
 (async () => {
