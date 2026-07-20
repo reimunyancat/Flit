@@ -8,13 +8,13 @@
 
 ---
 
-## 🌐 Try it live
+## Try it live
 
-There's a public one running at <https://flit-xw2a.onrender.com> - poke at it before you bother self-hosting.
+There's a public one running at <flit.reimunyancat.com> - poke at it before you bother self-hosting.
 
 Fair warning: it's wide-open wall, so anyone can post and everyone can read it. Don't drop anything you'd mind a stranger seeing. Things auto-expire after 10 minutes, uploads cap out at 5MB, and since it's on a free box it dozes off when idle - the first hit might take a few seconds to wake it up.
 
-## 🤔 Why
+## Why
 
 Moving a small thing between devices is weirdly annoying. A link on my phone I want on my laptop, a screenshot from my laptop I want on my home server, a snippet between two machines that don't share an OS — every option breaks my flow.
 
@@ -22,7 +22,7 @@ Emailing myself, DMing myself in some chat app, or fighting AirDrop (which doesn
 
 ---
 
-## ✨ Features
+## Features
 
 - **Send anything** — plain text, URLs (auto-detected as links), or file uploads.
 - **Live inbox** — a clean web page that updates in real time over SSE; new drops appear instantly on every open device.
@@ -34,7 +34,7 @@ Emailing myself, DMing myself in some chat app, or fighting AirDrop (which doesn
 
 ---
 
-## 🚀 Quick start
+## Quick start
 
 ```sh
 cargo run --release   # listens on 0.0.0.0:7777
@@ -51,7 +51,7 @@ curl -s localhost:7777/api/items | jq .
 
 ##
 
-## ⚙️ Configuration
+## Configuration
 
 | Variable        | Default        | Meaning                                        |
 | --------------- | -------------- | ---------------------------------------------- |
@@ -62,22 +62,6 @@ curl -s localhost:7777/api/items | jq .
 | `FLIT_MAX_MB`   | `5`            | Max upload size in MB                           |
 
 Pass the token as a header `Authorization: Bearer <token>` or a query string `?token=<token>` (the web UI reads `?token=` from its own URL).
-
----
-
-## 🔌 API
-
-| Method | Path                  | Body      | Result                  |
-| ------ | --------------------- | --------- | ----------------------- |
-| `POST` | `/api/text`           | raw text  | text/link item          |
-| `POST` | `/api/file`           | multipart | file item               |
-| `GET`  | `/api/items`          | —         | JSON list, newest first |
-| `GET`  | `/api/items/{id}/raw` | —         | original bytes          |
-| `GET`  | `/api/events`         | —         | SSE stream of new items |
-| `GET`  | `/`                   | —         | web inbox               |
-| `GET`  | `/health`             | —         | ok                      |
-
----
 
 ## 💻 Clients
 
